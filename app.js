@@ -20,12 +20,17 @@ function activePlaces(){const route=ids();return C.data.places.filter(p=>route.i
 function selectedLeg(){return selection.type==='leg'?activeLegs.find(l=>l.a===selection.a&&l.b===selection.b):null;}
 function sequence(){const route=ids(),out=[];route.forEach((id,i)=>{out.push({type:'place',id});if(currentDay!=='all'&&i<route.length-1)out.push({type:'leg',a:id,b:route[i+1]});});return out;}
 const sameSelection=(a,b)=>a.type===b.type&&(a.type==='place'?a.id===b.id:a.a===b.a&&a.b===b.b);
-function select(value,focus=true){selection=value;renderCard();renderItinerary();renderSchematic();if(focus&&leaf){if(value.type==='place'){const p=C.lookup[value.id];leaf.panTo([p.lat,p.lon]);}else{const leg=selectedLeg();if(leg){const p=C.lookup[leg.a],q=C.lookup[leg.b];leaf.fitBounds(L.latLngBounds([[p.lat,p.lon],[q.lat,q.lon]]).pad(.25),{maxZoom:16,padding:[30,85]});}}}}
+function select(value,focus=true){selection=value;renderCard();renderItinerary();renderLegStrip();renderSchematic();if(focus&&leaf){if(value.type==='place'){const p=C.lookup[value.id];leaf.panTo([p.lat,p.lon]);}else{const leg=selectedLeg();if(leg){const p=C.lookup[leg.a],q=C.lookup[leg.b];leaf.fitBounds(L.latLngBounds([[p.lat,p.lon],...(leg.coords||[]),[q.lat,q.lon]]).pad(.18),{maxZoom:16,padding:[20,55]});}}}}
 function focusCard(){document.querySelector('.selectedCard').scrollIntoView({block:'nearest',behavior:'smooth'});}
 function selectFromPanel(value){select(value);focusCard();}
 function toggleVisited(id){memory.visited=memory.visited.includes(id)?memory.visited.filter(x=>x!==id):[...memory.visited,id];persist();render(false);}
 function addPlace(id){if(currentDay==='all'||ids().includes(id))return;(memory.add[currentDay]??=[]).push(id);persist();selection={type:'place',id};render(false);}
 function removePlace(id){memory.add[currentDay]=(memory.add[currentDay]||[]).filter(x=>x!==id);persist();render(false);}
+function renderLegStrip(){
+ const host=$('#legStrip');host.replaceChildren();
+ for(const d of C.displayLegs(activeLegs)){const b=button(d.label,()=>select({type:'leg',a:d.leg.a,b:d.leg.b}));b.className='legStep '+d.kind+(selection.type==='leg'&&selection.a===d.leg.a&&selection.b===d.leg.b?' active':'');b.dataset.edge=d.leg.a+':'+d.leg.b;b.setAttribute('aria-label',d.label+' · '+d.description);host.append(b);}
+ if(currentDay!=='all'&&!routeClient.enabled){const b=button('도보 경로 연결',()=>$('#enableRoutes').click());b.disabled=!canQuery();host.append(b);}
+}
 function renderCard(){
  const host=$('#selectedContent');host.replaceChildren();const list=sequence(),index=list.findIndex(v=>sameSelection(v,selection));
  $('#cardPosition').textContent=(currentDay==='all'?'여행 전체':C.data.dayLabels[currentDay])+(selection.type==='leg'?' · 이동 구간':' · 장소')+(index>=0?` ${index+1}/${list.length}`:' · 추가 후보');
@@ -110,7 +115,7 @@ function render(fit=true){
  $('#sequenceLegend').textContent=currentDay==='all'?'날짜를 선택하면 번호 순서대로 연결됩니다.':`번호 순서 ${activeLegs.length}/${activeLegs.length} 연결 · 초록: 도로 경로 · 주황 점선: 이동 순서, 실제 노선 미확인 · 회색 점선: 핀과 보행로 간격`;
  $('#routeProgress').textContent=summary;
  $('#enableRoutes').disabled=routeClient.enabled||!canQuery();$('#enableRoutes').textContent=routeClient.enabled?'도보 경로 연결 켜짐':'빠진 도보 경로 연결';
- renderCard();renderItinerary();renderCandidates();renderSchematic();renderLeafContent(fit);
+ renderCard();renderItinerary();renderLegStrip();renderCandidates();renderSchematic();renderLeafContent(fit);
 }
 function showBasemap(state){
  $('#basemapBanner').dataset.state=state.status;$('#basemapBanner').setAttribute('aria-busy',String(state.status==='loading'));
