@@ -11,7 +11,7 @@ function tree(v,depth=0,budget={n:0}){need(depth<24&&++budget.n<150000,'파일 �
 const clone=v=>JSON.parse(JSON.stringify(v));
 function point(p){need(Array.isArray(p)&&p.length===2&&p.every(Number.isFinite)&&Math.abs(p[0])<=90&&Math.abs(p[1])<=180,'좌표 범위를 확인하세요.');}
 function validateTrip(t){
- need(object(t)&&t.schema==='local-trip-v1','전체 일정 파일이 아닙니다.');str(t.title,200);id(t.legacyMemoryKey);str(t.source);str(t.sourceDate);
+ need(object(t)&&t.schema==='local-trip-v1','개인 일정 파일 또는 전체 백업 파일을 선택해 주세요.');str(t.title,200);id(t.legacyMemoryKey);str(t.source);str(t.sourceDate);
  const places=list(t.places,500);need(places.length>0,'장소가 비어 있습니다.');const ids=new Set();
  for(const p of places){need(object(p),'장소 형식을 확인하세요.');id(p.id);need(!ids.has(p.id),'장소 ID가 중복됩니다.');ids.add(p.id);point([p.lat,p.lon]);need(typeof p.pin_approx==='boolean','핀 근거가 필요합니다.');for(const k of ['name','address','area','cat','priority','day','note','coord_source'])str(p[k]);}
  const refs=(a,min=0)=>{list(a,500);need(a.length>=min,'동선이 비어 있습니다.');for(const i of a)need(ids.has(i),'동선에 없는 장소 ID가 있습니다.');};

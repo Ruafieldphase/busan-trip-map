@@ -4,7 +4,7 @@
 <title>내 여행 지도</title><link rel="stylesheet" href="styles.css"><script defer src="core.js"></script><script defer src="io.js"></script><script defer src="app.js"></script></head>
 <body>
 <header class="importBar"><h1 id="tripTitle">내 여행 지도</h1><label class="fileLabel">일정·전체 백업 가져오기 <input id="importTrip" type="file" accept="application/json,.json"></label><p id="memoryNotice" role="status" aria-live="polite"></p></header>
-<section id="empty" class="empty"><h2>여행 파일을 가져오면 시작합니다</h2><p>일정과 방문 기록은 이 주소의 브라우저에만 저장합니다. 파일을 서버로 보내지 않습니다.</p><p>다른 기기로 옮길 때는 전체 내보내기로 파일을 보관한 뒤 새 브라우저에서 가져오세요. 예전 파일 주소나 다른 주소의 기록은 자동으로 옮겨지지 않습니다.</p><p>가져온 뒤 배경 지도를 불러오면 지도 제공자에게 보는 지역이 전달됩니다. 외부 지도 링크는 직접 누를 때만 목적지 정보를 전달합니다.</p></section>
+<section id="empty" class="empty"><h2>내 여행 일정을 불러와 주세요</h2><p>처음에는 개인 일정을 불러오기 전이라 날짜와 동선이 비어 있습니다.</p><ol><li>별도로 받은 개인 일정 파일이나 전체 백업 파일을 휴대폰에 다운로드하세요. Drive에서 열어 보기만 했다면 먼저 기기에 저장하세요.</li><li>위의 <strong>일정·전체 백업 가져오기</strong>를 눌러 내려받은 <strong>.json 파일</strong>을 선택하세요.</li></ol><p>일정과 방문 기록은 이 주소의 브라우저에만 저장합니다. 파일을 서버로 보내지 않습니다.</p><p>다른 기기로 옮길 때는 전체 내보내기로 파일을 보관한 뒤 새 브라우저에서 가져오세요. 예전 파일 주소나 다른 주소의 기록은 자동으로 옮겨지지 않습니다.</p><p>가져온 뒤 배경 지도를 불러오면 지도 제공자에게 보는 지역이 전달됩니다. 외부 지도 링크는 직접 누를 때만 목적지 정보를 전달합니다.</p></section>
 <div id="loaded" hidden>
 <div class="appShell"><header><nav class="days" id="days" aria-label="여행 날짜"></nav></header>
 <main class="stage"><section class="mapWrap" aria-label="여행 지도"><div class="map" id="map" aria-label="OpenStreetMap 지도"></div><div id="schematic" class="schematic"></div>

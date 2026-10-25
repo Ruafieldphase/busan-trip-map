@@ -4,6 +4,13 @@ A small browser-based trip map that keeps the viewer and your personal trip file
 
 **App:** https://ruafieldphase.github.io/busan-trip-map/
 
+## 휴대폰에서 처음 사용하기
+
+1. 별도로 받은 개인 일정 파일이나 전체 백업 파일을 휴대폰에 다운로드하세요. Drive에서 열어 보기만 했다면 먼저 기기에 저장하세요.
+2. 앱을 열고 **일정·전체 백업 가져오기**에서 내려받은 **.json 파일**을 선택하세요.
+
+처음에는 개인 일정을 불러오기 전이라 날짜와 동선이 비어 있습니다. 파일을 가져오면 지도와 날짜가 나타납니다. 개인 파일의 주소와 내용은 이 공개 저장소에 포함하지 않습니다. 다른 기기로 옮기기 전에는 앱의 전체 내보내기로 최신 기록도 함께 보관하세요.
+
 ## Use
 
 1. Open the app in a modern browser.
