@@ -39,7 +39,9 @@ function renderCard(){
   host.append(node('p',p.note||''),actions);$('#selectedSource').textContent=`선택 장소 원본 메모: ${p.note||'없음'} / 원본 출처: ${p.coord_source}. 이번 작업에서 위치·영업·통제 여부를 재조회하지 않았습니다.`;
  }else{
   const leg=selectedLeg();if(!leg)return;
-  host.append(node('h2',C.lookup[leg.a].name+' → '+C.lookup[leg.b].name),node('p',leg.mode+' · '+C.textMeasure(leg),'measure'),node('p',leg.source+' / '+leg.queriedAt,'source'));
+  const number=ids().indexOf(leg.a)+1;
+  host.append(node('h2',`${number}→${number+1} · `+C.lookup[leg.a].name+' → '+C.lookup[leg.b].name),node('p',leg.mode+' · '+C.textMeasure(leg),'measure'),node('p',leg.source+' / '+leg.queriedAt,'source'));
+  if(!leg.coords)host.append(node('p','지도 점선은 두 번호의 이동 순서입니다. 실제 도로·버스 노선이 확인된 선은 아닙니다.','pinWarning'));
   const actions=node('div',null,'actions');
   const walk=C.directionLink(leg,'walk'),traffic=C.directionLink(leg,'traffic');
   if(walk.url===traffic.url){actions.append(link(walk.label,walk.url),link('출발 장소 검색 ↗',C.kakaoSearch(C.lookup[leg.a])));}else{actions.append(link(walk.label,walk.url),link(traffic.label,traffic.url));}
@@ -69,7 +71,7 @@ function renderCandidates(){
  for(const p of candidates){const row=node('article',null,'candidate');row.append(node('strong',p.name,memory.visited.includes(p.id)?'visited':''),node('p',p.area+' · '+p.cat+' · '+(p.pin_approx?'개략 핀':'원본 근거 있음')));const actions=node('div',null,'actions');actions.append(button('선택',()=>selectFromPanel({type:'place',id:p.id})));if(currentDay!=='all')actions.append(button('동선에 추가',()=>addPlace(p.id)));row.append(actions);host.append(row);}
  $('#resetAdded').disabled=currentDay==='all'||!(memory.add[currentDay]||[]).length;
 }
-function fitLeaf(){if(!leaf)return;const points=ids().map(id=>C.lookup[id]);leaf.fitBounds(L.latLngBounds(points.map(p=>[p.lat,p.lon])).pad(.18),{padding:[35,90],maxZoom:15});}
+function fitLeaf(){if(!leaf)return;const points=ids().map(id=>C.lookup[id]);leaf.fitBounds(L.latLngBounds([...points.map(p=>[p.lat,p.lon]),...C.drawnLegs(activeLegs).flatMap(l=>l.coords)]).pad(.18),{padding:[35,90],maxZoom:15});}
 function renderLeafContent(fit){
  if(!leaf)return;markerLayer.clearLayers();routeLayer.clearLayers();const route=ids();
  for(const p of activePlaces()){
@@ -77,7 +79,13 @@ function renderLeafContent(fit){
   const icon=L.divIcon({className:'',html:`<div class="mapDot" style="width:${size}px;height:${size}px;background:${(Object.hasOwn(colors,p.cat)?colors[p.cat]:'#a6c9d2')};opacity:${active?1:.65}">${active?n+1:''}</div>`,iconSize:[size,size],iconAnchor:[size/2,size/2]});
   L.marker([p.lat,p.lon],{icon,title:p.name,alt:p.name,riseOnHover:true}).on('click',()=>select({type:'place',id:p.id},false)).addTo(markerLayer);
  }
- for(const leg of C.drawnLegs(activeLegs))L.polyline(leg.coords,{color:leg.type==='walk'?'#269666':'#3c72ce',weight:5,opacity:.94}).bindTooltip(node('span',leg.mode+' · '+leg.source+' / '+leg.queriedAt+' · 현장 확인 필요')).on('click',()=>select({type:'leg',a:leg.a,b:leg.b},false)).addTo(routeLayer);
+ for(const d of C.displayLegs(activeLegs)){
+  const {leg}=d,selectLeg=()=>select({type:'leg',a:leg.a,b:leg.b},false),known=d.kind==='road';
+  L.polyline(d.coords,{className:'route-'+d.kind,color:known?'#269666':'#f5a94f',weight:known?5:4,opacity:.94,dashArray:known?null:'9 7'}).bindTooltip(node('span',d.label+' · '+d.description)).on('click',selectLeg).addTo(routeLayer);
+  for(const gap of d.gaps)L.polyline(gap,{className:'route-pin-gap',color:'#8a9baa',weight:3,opacity:.9,dashArray:'3 5'}).bindTooltip(node('span',d.label+' · 핀과 보행로 사이 간격 · 실제 보행로 미확인')).on('click',selectLeg).addTo(routeLayer);
+  const mid=C.pathMidpoint(d.coords),icon=L.divIcon({className:'routeDirectionIcon',html:`<span class="routeDirection ${known?'known':'unknown'}"><b style="transform:rotate(${mid.angle.toFixed(1)}deg)">▶</b><span>${d.label}${known?'':' · 순서'}</span></span>`,iconSize:[68,24],iconAnchor:[34,12]});
+  L.marker(mid.point,{icon,title:d.label+' · '+d.description,alt:d.label+' · '+d.description,zIndexOffset:-100}).on('click',selectLeg).addTo(routeLayer);
+ }
  if(fit)fitLeaf();
 }
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -87,7 +95,7 @@ function renderSchematic(){
  const spanX=Math.max(1.4,...locs.map(p=>Math.abs(p.lon-midLon)*91))*2,spanY=Math.max(1.4,...locs.map(p=>Math.abs(p.lat-midLat)*111))*2;
  const scale=Math.min(740/spanX,420/spanY),xy=(lat,lon)=>[W/2+(lon-midLon)*91*scale,H/2-(lat-midLat)*111*scale+20];
  let grid='';for(let x=100;x<W;x+=100)grid+=`<path d="M${x},0V${H}"/>`;for(let y=100;y<H;y+=100)grid+=`<path d="M0,${y}H${W}"/>`;
- const paths=C.drawnLegs(activeLegs).map(leg=>`<polyline data-edge="${leg.a}:${leg.b}" points="${leg.coords.map(c=>xy(c[0],c[1]).map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${leg.type==='walk'?'#6ce5b5':'#7ca8ee'}" stroke-width="5"/>`).join('');
+ const paths=C.displayLegs(activeLegs).map(d=>{const line=(coords,kind)=>`<polyline data-edge="${d.leg.a}:${d.leg.b}" data-kind="${kind}" points="${coords.map(c=>xy(c[0],c[1]).map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${kind==='road'?'#6ce5b5':kind==='order'?'#f5a94f':'#8a9baa'}" stroke-width="${kind==='pin-gap'?3:5}" ${kind!=='road'?'stroke-dasharray="9 7"':''}/>`;const m=C.pathMidpoint(d.coords),p=xy(...m.point);return line(d.coords,d.kind)+d.gaps.map(g=>line(g,'pin-gap')).join('')+`<text x="${p[0].toFixed(1)}" y="${p[1].toFixed(1)}" fill="#fff" stroke="#102a37" stroke-width="4" paint-order="stroke" font-size="16">${d.label}${d.kind==='order'?' · 순서':''}</text>`;}).join('');
  const pins=points.map(p=>{const [x,y]=xy(p.lat,p.lon),n=route.indexOf(p.id);if(x<15||x>885||y<95||y>580)return '';return `<g data-pin="${p.id}" role="button" tabindex="0" aria-label="${esc(p.name)}" style="cursor:pointer" transform="translate(${x.toFixed(1)},${y.toFixed(1)})"><title>${esc(p.name)}</title><circle r="${selection.id===p.id?12:n>=0?9:6}" fill="${(Object.hasOwn(colors,p.cat)?colors[p.cat]:'#aacccc')}" stroke="white" stroke-width="2"/>${n>=0?`<text x="13" y="-8" fill="#f0f8ff" stroke="#102a37" stroke-width="4" paint-order="stroke" font-size="13">${n+1}. ${esc(p.name.slice(0,12))}</text>`:''}</g>`;}).join('');
  $('#schematic').innerHTML=`<svg role="img" aria-label="위치 비례 개략도, 실제 지도 아님" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#183344"/><g stroke="#395669" opacity=".5">${grid}</g><text x="26" y="98" fill="#b4d2da" font-size="17">위치 비례 개략도 · 실제 도로·해안선 아님</text><text x="850" y="100" fill="#c4e1e7" font-size="20">↑ N</text>${paths}${pins}</svg>`;
  $('#schematic').querySelectorAll('[data-pin]').forEach(el=>{el.onclick=()=>select({type:'place',id:el.dataset.pin},false);el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();el.onclick();}};});
@@ -99,6 +107,7 @@ function render(fit=true){
  document.querySelectorAll('[data-mode]').forEach(b=>{const active=b.dataset.mode===mode;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
  $('#dayDescription').textContent=currentDay==='all'?'전체 장소를 살펴보세요. 날짜를 선택하면 구간별 이동 정보가 나옵니다.':C.data.dayDesc[currentDay].join(' · ');
  const summary=currentDay==='all'?'전체: 장소만 표시':C.routeSummary(activeLegs);$('#routeStatus').textContent=summary;$('#mapRouteSummary').textContent=summary;
+ $('#sequenceLegend').textContent=currentDay==='all'?'날짜를 선택하면 번호 순서대로 연결됩니다.':`번호 순서 ${activeLegs.length}/${activeLegs.length} 연결 · 초록: 도로 경로 · 주황 점선: 이동 순서, 실제 노선 미확인 · 회색 점선: 핀과 보행로 간격`;
  $('#routeProgress').textContent=summary;
  $('#enableRoutes').disabled=routeClient.enabled||!canQuery();$('#enableRoutes').textContent=routeClient.enabled?'도보 경로 연결 켜짐':'빠진 도보 경로 연결';
  renderCard();renderItinerary();renderCandidates();renderSchematic();renderLeafContent(fit);

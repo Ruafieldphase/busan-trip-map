@@ -23,6 +23,8 @@ This repository ships an empty viewer. It contains no personal itinerary, accomm
 
 ## How it works
 
+Every adjacent pair of numbered stops is now displayed immediately, including before pedestrian routing is enabled. Green lines follow acquired road/path geometry. Orange dashed arrows show itinerary order only where a real route is unavailable, and are explicitly labeled as unverified. Gray dashed links show gaps between a pin and the routing network. These display links are never saved as road geometry, counted as acquired routes, or presented as actual bus roads. Numbered direction badges such as `1→2` make the sequence visible and selectable on the map.
+
 - `io.js`: bounded JSON validation, atomic local imports, legacy visit-memory merging and full private backups.
 - `core.js`: route/leg construction and preservation of independently stored geometry and evidence.
 - `routing.js`: opt-in foot routing, directed coordinate-pair cache, response validation, one-request queue and stale-response isolation.

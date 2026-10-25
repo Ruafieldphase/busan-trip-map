@@ -55,6 +55,17 @@ function chooseLeg(a,b,day,mode){
 }
 function makeLegs(day,mode,memory){const ids=routesFor(day,mode,memory);return day==='all'?[]:ids.slice(1).map((b,i)=>chooseLeg(ids[i],b,day,mode));}
 const drawnLegs=legs=>legs.filter(l=>l.coords&&l.coords.length>1);
+// Display topology is separate from acquired road geometry and never enters the trip/cache.
+function displayLegs(legs){return legs.map((leg,i)=>{
+ const a=lookup[leg.a],b=lookup[leg.b],from=[a.lat,a.lon],to=[b.lat,b.lon],known=!!(leg.coords&&leg.coords.length>1),coords=known?leg.coords:[from,to];
+ const gaps=[];if(known){if(distance(a,{lat:coords[0][0],lon:coords[0][1]})>.5)gaps.push([from,coords[0]]);const end=coords[coords.length-1];if(distance(b,{lat:end[0],lon:end[1]})>.5)gaps.push([end,to]);}
+ return {leg,from:i+1,to:i+2,kind:known?'road':'order',coords,gaps,label:`${i+1}→${i+2}`,description:known?leg.mode+' · 실제 경로 데이터':'이동 순서만 표시 · 실제 노선 미확인'};
+});}
+function pathMidpoint(coords){
+ let total=0;const lengths=coords.slice(1).map((p,i)=>{const n=distance({lat:coords[i][0],lon:coords[i][1]},{lat:p[0],lon:p[1]});total+=n;return n;});let at=total/2;
+ for(let i=0;i<lengths.length;i++){if(at<=lengths[i]||i===lengths.length-1){const a=coords[i],b=coords[i+1],t=lengths[i]?at/lengths[i]:0;return {point:[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t],angle:Math.atan2(-(b[0]-a[0])*111,(b[1]-a[1])*91)*180/Math.PI};}at-=lengths[i];}
+ return {point:coords[0],angle:0};
+}
 const routeSummary=legs=>{const ready=drawnLegs(legs),fresh=ready.filter(l=>l.routeOrigin==='calculated').length,pending=legs.filter(l=>l.routeStatus==='pending').length,failed=legs.filter(l=>l.routeStatus==='failed').length;return `경로 ${ready.length}/${legs.length}구간 · 저장 ${ready.length-fresh} · 새 조회 ${fresh} · 대기 ${pending} · 실패 ${failed} · 미확인 ${legs.length-ready.length-pending-failed}`;};
 function textMeasure(leg){if(leg.coords&&leg.distance!=null&&leg.duration!=null)return `${(leg.distance/1000).toFixed(2)}km · 약 ${Math.round(leg.duration/60)}분 (${leg.routeOrigin==='calculated'?'새 조회':'원본'} 보행 엔진 추정, 휴식·현재 교통 제외)`;if(leg.routeStatus==='pending')return leg.routeMessage||'보행 경로 대기 중';if(leg.routeStatus==='failed')return '도보 조회 실패 · '+leg.routeMessage;return '경로·소요시간 미확인';}
 function placeQuery(p){return Object.hasOwn(data.placeQueries,p.id)?data.placeQueries[p.id]:p.name;}
@@ -89,5 +100,5 @@ function createBasemapState(){
  }
  return {event,snapshot};
 }
-return {data,lookup,MEMORY_KEY,reservations,normalizeMemory,distance,routesFor,decodePolyline,segmentPreset,presets,geometryCache,edgeKey,chooseLeg,makeLegs,drawnLegs,routeSummary,textMeasure,placeQuery,highConfidence,kakaoSearch,kakaoMap,navUrl,directionLink,copySummary,createBasemapState};
+return {data,lookup,MEMORY_KEY,reservations,normalizeMemory,distance,routesFor,decodePolyline,segmentPreset,presets,geometryCache,edgeKey,chooseLeg,makeLegs,drawnLegs,displayLegs,pathMidpoint,routeSummary,textMeasure,placeQuery,highConfidence,kakaoSearch,kakaoMap,navUrl,directionLink,copySummary,createBasemapState};
 });
