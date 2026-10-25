@@ -1,12 +1,15 @@
 (function(){
 'use strict';
-let C; const I=window.TripIO,$=s=>document.querySelector(s);
+let C; const I=window.TripIO,R=window.TripRouting,$=s=>document.querySelector(s);
 let trip,state; const storage=()=>window.localStorage;
 const colors={숙소:'#bea7ff',교통:'#91bcff',해변:'#68d6c5',산책:'#70edbb',전망:'#77dfe9',카페:'#ffd08b',먹거리:'#ffad8e',시장:'#ffa98b',선택관광:'#b9adfa'};
 let memory,currentDay,mode,activeLegs=[],selection;
 let leaf=null,tileLayer=null,markerLayer=null,routeLayer=null;
 let tileTimer=null,assetTimer=null,assetsLoading=false;
 let basemap;
+let importEpoch=0;
+const routeClient=R.create({onChange:()=>{if(trip)render(false);},onCache:cache=>{state={...state,routeCache:cache};persist();}});
+const canQuery=()=>['http:','https:'].includes(location.protocol);
 const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(cls)el.className=cls;return el;};
 const button=(text,action)=>{const el=node('button',text);el.type='button';el.onclick=action;return el;};
 const link=(text,url)=>{const el=node('a',text);el.href=url;el.target='_blank';el.rel='noopener noreferrer';return el;};
@@ -40,6 +43,11 @@ function renderCard(){
   const actions=node('div',null,'actions');
   const walk=C.directionLink(leg,'walk'),traffic=C.directionLink(leg,'traffic');
   if(walk.url===traffic.url){actions.append(link(walk.label,walk.url),link('출발 장소 검색 ↗',C.kakaoSearch(C.lookup[leg.a])));}else{actions.append(link(walk.label,walk.url),link(traffic.label,traffic.url));}
+  if(leg.routeOrigin==='calculated'||!C.highConfidence(C.lookup[leg.a])||!C.highConfidence(C.lookup[leg.b]))host.append(node('p','개략 핀 기준, 출발·도착 확인','pinWarning'));
+  if(R.explicitWalk(C,leg)&&!leg.routeStatus){const query=button('이 구간을 도보로 조회',()=>routeClient.request(leg,{explicit:true}));query.disabled=!canQuery();actions.append(query);}
+  if(leg.routeStatus==='failed'){const retry=button('이 구간 도보 다시 시도',()=>routeClient.request(leg,{explicit:!!leg.routeExplicit,retry:true}));retry.disabled=!canQuery();actions.append(retry);}
+  if(leg.routeStatus==='pending')host.append(node('p',leg.routeMessage,'routePending'));
+  if(leg.routeStatus==='failed')host.append(node('p',leg.routeMessage+' · 자동 재시도하지 않습니다.','pinWarning'));
   host.append(node('p',leg.desc),actions);$('#selectedSource').textContent=`선택 이동 구간: ${leg.desc} / 출처: ${leg.source} / 조회시각: ${leg.queriedAt}`;
  }
 }
@@ -68,7 +76,7 @@ function renderLeafContent(fit){
   const icon=L.divIcon({className:'',html:`<div class="mapDot" style="width:${size}px;height:${size}px;background:${(Object.hasOwn(colors,p.cat)?colors[p.cat]:'#a6c9d2')};opacity:${active?1:.65}">${active?n+1:''}</div>`,iconSize:[size,size],iconAnchor:[size/2,size/2]});
   L.marker([p.lat,p.lon],{icon,title:p.name,alt:p.name,riseOnHover:true}).on('click',()=>select({type:'place',id:p.id},false)).addTo(markerLayer);
  }
- for(const leg of C.drawnLegs(activeLegs))L.polyline(leg.coords,{color:'#269666',weight:5,opacity:.94}).bindTooltip('원본 저장 보행 경로 · 현장 확인 필요').on('click',()=>select({type:'leg',a:leg.a,b:leg.b},false)).addTo(routeLayer);
+ for(const leg of C.drawnLegs(activeLegs))L.polyline(leg.coords,{color:leg.type==='walk'?'#269666':'#3c72ce',weight:5,opacity:.94}).bindTooltip(node('span',leg.mode+' · '+leg.source+' / '+leg.queriedAt+' · 현장 확인 필요')).on('click',()=>select({type:'leg',a:leg.a,b:leg.b},false)).addTo(routeLayer);
  if(fit)fitLeaf();
 }
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -78,18 +86,20 @@ function renderSchematic(){
  const spanX=Math.max(1.4,...locs.map(p=>Math.abs(p.lon-midLon)*91))*2,spanY=Math.max(1.4,...locs.map(p=>Math.abs(p.lat-midLat)*111))*2;
  const scale=Math.min(740/spanX,420/spanY),xy=(lat,lon)=>[W/2+(lon-midLon)*91*scale,H/2-(lat-midLat)*111*scale+20];
  let grid='';for(let x=100;x<W;x+=100)grid+=`<path d="M${x},0V${H}"/>`;for(let y=100;y<H;y+=100)grid+=`<path d="M0,${y}H${W}"/>`;
- const paths=C.drawnLegs(activeLegs).map(leg=>`<polyline data-edge="${leg.a}:${leg.b}" points="${leg.coords.map(c=>xy(c[0],c[1]).map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="#6ce5b5" stroke-width="5"/>`).join('');
+ const paths=C.drawnLegs(activeLegs).map(leg=>`<polyline data-edge="${leg.a}:${leg.b}" points="${leg.coords.map(c=>xy(c[0],c[1]).map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${leg.type==='walk'?'#6ce5b5':'#7ca8ee'}" stroke-width="5"/>`).join('');
  const pins=points.map(p=>{const [x,y]=xy(p.lat,p.lon),n=route.indexOf(p.id);if(x<15||x>885||y<95||y>580)return '';return `<g data-pin="${p.id}" role="button" tabindex="0" aria-label="${esc(p.name)}" style="cursor:pointer" transform="translate(${x.toFixed(1)},${y.toFixed(1)})"><title>${esc(p.name)}</title><circle r="${selection.id===p.id?12:n>=0?9:6}" fill="${(Object.hasOwn(colors,p.cat)?colors[p.cat]:'#aacccc')}" stroke="white" stroke-width="2"/>${n>=0?`<text x="13" y="-8" fill="#f0f8ff" stroke="#102a37" stroke-width="4" paint-order="stroke" font-size="13">${n+1}. ${esc(p.name.slice(0,12))}</text>`:''}</g>`;}).join('');
  $('#schematic').innerHTML=`<svg role="img" aria-label="위치 비례 개략도, 실제 지도 아님" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#183344"/><g stroke="#395669" opacity=".5">${grid}</g><text x="26" y="98" fill="#b4d2da" font-size="17">위치 비례 개략도 · 실제 도로·해안선 아님</text><text x="850" y="100" fill="#c4e1e7" font-size="20">↑ N</text>${paths}${pins}</svg>`;
  $('#schematic').querySelectorAll('[data-pin]').forEach(el=>{el.onclick=()=>select({type:'place',id:el.dataset.pin},false);el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();el.onclick();}};});
 }
 function render(fit=true){
- activeLegs=C.makeLegs(currentDay,mode,memory);
+ activeLegs=routeClient.view(C.makeLegs(currentDay,mode,memory));
  if(selection.type==='leg'&&!selectedLeg())selection={type:'place',id:ids()[0]};
  document.querySelectorAll('[data-day]').forEach(b=>{const active=b.dataset.day===currentDay;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
  document.querySelectorAll('[data-mode]').forEach(b=>{const active=b.dataset.mode===mode;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
  $('#dayDescription').textContent=currentDay==='all'?'전체 장소를 살펴보세요. 날짜를 선택하면 구간별 이동 정보가 나옵니다.':C.data.dayDesc[currentDay].join(' · ');
  const summary=currentDay==='all'?'전체: 장소만 표시':C.routeSummary(activeLegs);$('#routeStatus').textContent=summary;$('#mapRouteSummary').textContent=summary;
+ $('#routeProgress').textContent=summary;
+ $('#enableRoutes').disabled=routeClient.enabled||!canQuery();$('#enableRoutes').textContent=routeClient.enabled?'도보 경로 연결 켜짐':'빠진 도보 경로 연결';
  renderCard();renderItinerary();renderCandidates();renderSchematic();renderLeafContent(fit);
 }
 function showBasemap(state){
@@ -142,14 +152,19 @@ window.addEventListener('resize',()=>{if(leaf)leaf.invalidateSize();});
 $('#previous').onclick=()=>{const list=sequence(),index=list.findIndex(v=>sameSelection(v,selection));if(index>0)select(list[index-1]);};
 $('#next').onclick=()=>{const list=sequence(),index=list.findIndex(v=>sameSelection(v,selection));if(index>=0&&index<list.length-1)select(list[index+1]);};
 $('#fit').onclick=()=>{if(!trip)return;if(leaf)fitLeaf();else renderSchematic();};
+$('#enableRoutes').onclick=()=>{if(!trip||!canQuery())return;try{storage().setItem(R.PREFERENCE_KEY,JSON.stringify({scope:R.scope(trip),enabled:true}));}catch(e){$('#memoryNotice').textContent='도보 연결 설정은 이번 화면에서만 유지됩니다.';}routeClient.enable();};
+window.addEventListener('pagehide',()=>routeClient.cancel());
 $('#resetAdded').onclick=()=>{if(currentDay==='all')return;memory.add[currentDay]=[];persist();render(false);};
 $('#copySummary').onclick=async()=>{const text=C.copySummary(currentDay,mode,memory);try{await navigator.clipboard.writeText(text);$('#copyNotice').textContent=' 복사했습니다.';$('#copyFallback').hidden=true;}catch(e){$('#copyText').value=text;$('#copyFallback').hidden=false;$('#copyText').focus();$('#copyText').select();}};
 
 function download(value,name){const blob=new Blob([JSON.stringify(value,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#exportMemory').onclick=()=>{if(trip)download({schema:'busan-local-memory-v1',key:trip.legacyMemoryKey,memory},'visit-memory.json');};
 $('#exportTrip').onclick=()=>{if(trip)download({...state,trip,memory},'private-trip-backup.json');};
-function activate(next){
+function activate(next,restorePreference=false){
  state=next;trip=state.trip;memory=state.memory;C=window.BusanCore.create(trip);basemap=basemap||C.createBasemapState();
+ let enabled=false;try{const pref=JSON.parse(storage().getItem(R.PREFERENCE_KEY)||'null');enabled=restorePreference&&canQuery()&&pref?.enabled===true&&pref.scope===R.scope(trip);}catch(e){}
+ if(!restorePreference)try{storage().setItem(R.PREFERENCE_KEY,JSON.stringify({scope:R.scope(trip),enabled:false}));}catch(e){}
+ routeClient.activate(C,state.routeCache,{enabled});
  currentDay=Object.keys(trip.dayRoutes)[0];mode=Object.keys(trip.dayRoutes[currentDay])[0];selection={type:'place',id:C.routesFor(currentDay,mode,memory)[0]};
  $('#empty').hidden=true;$('#loaded').hidden=false;$('#tripTitle').textContent=trip.title;
  const days=$('#days');days.replaceChildren();for(const d of [...Object.keys(trip.dayRoutes),'all']){const b=button(d==='all'?'전체':trip.dayLabels[d],()=>{currentDay=d;if(d!=='all'&&!trip.dayRoutes[d][mode])mode=Object.keys(trip.dayRoutes[d])[0];buildModes();selection={type:'place',id:ids()[0]};render();});b.dataset.day=d;days.append(b);}
@@ -157,12 +172,12 @@ function activate(next){
  render();showBasemap(basemap.snapshot());if(!leaf)bootMap();
 }
 function buildModes(){const host=$('#modes');host.replaceChildren();const modes=Object.keys(trip.dayRoutes[currentDay==='all'?Object.keys(trip.dayRoutes)[0]:currentDay]);for(const m of modes){const b=button(trip.modeLabels[m]||m,()=>{mode=m;selection={type:'place',id:ids()[0]};render();});b.dataset.mode=m;host.append(b);}}
-async function importFile(event,kind){const file=event.target.files[0];if(!file)return;try{
+async function importFile(event,kind){const file=event.target.files[0];if(!file)return;const version=++importEpoch;try{
  if(file.size>I.MAX_BYTES)throw Error('파일이 너무 큽니다. 최대 2MB입니다.');
- const prepared=I.prepare(await file.text(),state,kind);
+ const text=await file.text();if(version!==importEpoch)return;const prepared=I.prepare(text,state,kind);
  if(prepared.replaces&&!window.confirm('현재 일정과 기록을 이 파일로 바꿀까요? 보관하려면 먼저 전체 내보내기를 해 주세요.'))return;
  I.commit(storage(),prepared.state);activate(prepared.state);$('#memoryNotice').textContent=kind==='memory'?'기존 기록을 유지하고 가져온 기록을 합쳤습니다.':'일정을 이 브라우저에 가져왔습니다.';
  }catch(e){$('#memoryNotice').textContent='가져오지 못했습니다: '+e.message+' 기존 저장값은 유지했습니다.';}finally{event.target.value='';}}
 $('#importTrip').onchange=e=>importFile(e,'trip');$('#importMemory').onchange=e=>importFile(e,'memory');
-try{const saved=I.load(storage());if(saved)activate(saved);}catch(e){$('#memoryNotice').textContent='저장 기록을 읽지 못했습니다. 기존 저장값은 지우지 않았습니다. '+e.message;}
+try{const saved=I.load(storage());if(saved)activate(saved,true);}catch(e){$('#memoryNotice').textContent='저장 기록을 읽지 못했습니다. 기존 저장값은 지우지 않았습니다. '+e.message;}
 })();

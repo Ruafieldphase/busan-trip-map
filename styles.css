@@ -11,3 +11,5 @@
 .appShell,.stage{grid-template-columns:minmax(0,1fr)}
 .appShell>header,.stage,.mapWrap,.selectedCard{min-width:0}
 .days{width:100%;max-width:100%}
+
+.routeControls{padding:10px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.routeControls p{margin:7px 0}.routeControls button{max-width:100%}.selectedCard .pinWarning{color:#ffce86;font-weight:600}.selectedCard .routePending{color:var(--mint)}#routeProgress{font-size:12px;color:var(--muted)}.mapTools span{overflow-wrap:anywhere;min-width:0}.mapTools{max-width:100%}

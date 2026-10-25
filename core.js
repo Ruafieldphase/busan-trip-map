@@ -55,8 +55,8 @@ function chooseLeg(a,b,day,mode){
 }
 function makeLegs(day,mode,memory){const ids=routesFor(day,mode,memory);return day==='all'?[]:ids.slice(1).map((b,i)=>chooseLeg(ids[i],b,day,mode));}
 const drawnLegs=legs=>legs.filter(l=>l.coords&&l.coords.length>1);
-const routeSummary=legs=>`저장 경로 ${drawnLegs(legs).length}/${legs.length}구간 · 나머지 경로·시간 미확인`;
-function textMeasure(leg){if(leg.coords&&leg.distance!=null&&leg.duration!=null)return `${(leg.distance/1000).toFixed(2)}km · 약 ${Math.round(leg.duration/60)}분 (원본 보행 엔진 추정, 휴식 제외)`;return '경로·소요시간 미확인';}
+const routeSummary=legs=>{const ready=drawnLegs(legs),fresh=ready.filter(l=>l.routeOrigin==='calculated').length,pending=legs.filter(l=>l.routeStatus==='pending').length,failed=legs.filter(l=>l.routeStatus==='failed').length;return `경로 ${ready.length}/${legs.length}구간 · 저장 ${ready.length-fresh} · 새 조회 ${fresh} · 대기 ${pending} · 실패 ${failed} · 미확인 ${legs.length-ready.length-pending-failed}`;};
+function textMeasure(leg){if(leg.coords&&leg.distance!=null&&leg.duration!=null)return `${(leg.distance/1000).toFixed(2)}km · 약 ${Math.round(leg.duration/60)}분 (${leg.routeOrigin==='calculated'?'새 조회':'원본'} 보행 엔진 추정, 휴식·현재 교통 제외)`;if(leg.routeStatus==='pending')return leg.routeMessage||'보행 경로 대기 중';if(leg.routeStatus==='failed')return '도보 조회 실패 · '+leg.routeMessage;return '경로·소요시간 미확인';}
 function placeQuery(p){return Object.hasOwn(data.placeQueries,p.id)?data.placeQueries[p.id]:p.name;}
 const highConfidence=p=>!p.pin_approx&&!p.coord_source.includes('시범판');
 const kakaoSearch=p=>'https://map.kakao.com/link/search/'+encodeURIComponent(placeQuery(p));
@@ -64,13 +64,12 @@ const navUrl=p=>'https://map.naver.com/p/search/'+encodeURIComponent(placeQuery(
 const kakaoMap=p=>highConfidence(p)?'https://map.kakao.com/link/map/'+encodeURIComponent(p.name)+','+p.lat+','+p.lon:kakaoSearch(p);
 function directionLink(leg,method){
  const a=lookup[leg.a],b=lookup[leg.b];
- if(!highConfidence(a)||!highConfidence(b))return {url:kakaoSearch(b),label:'도착 장소 검색 ↗ (출발·도착 직접 확인)'};
  const coord=p=>encodeURIComponent(p.name)+','+p.lat+','+p.lon;
- return {url:'https://map.kakao.com/link/by/'+(method==='walk'?'walk':'traffic')+'/'+coord(a)+'/'+coord(b),label:method==='walk'?'도보 길찾기 ↗':'대중교통 길찾기 ↗'};
+ return {url:'https://map.kakao.com/link/by/'+(method==='walk'?'walk':'traffic')+'/'+coord(a)+'/'+coord(b),label:(method==='walk'?'도보 길찾기 ↗':'대중교통 길찾기 ↗')+(!highConfidence(a)||!highConfidence(b)?' · 개략 핀 기준, 출발·도착 확인':'')};
 }
 function copySummary(day,mode,memory){
  const days=day==='all'?Object.keys(data.dayRoutes):[day];
- return days.map(d=>`${data.dayLabels[d]} ${data.dayDesc[d][0]}\n${routesFor(d,mode,memory).map((id,i)=>`${i+1}. ${lookup[id].name}`).join('\n')}`).join('\n\n')+'\n\n예약 (원본 유지)\n'+reservations.join('\n')+'\n\n※ 초록선은 원본에 저장된 도보 경로 조각입니다. 도보 후보·버스·선 없는 구간의 실제 경로와 시간은 미확인입니다. 후보 삽입 순서는 직선 거리 참고이며 이동 가능성을 보장하지 않습니다.';
+ return days.map(d=>`${data.dayLabels[d]} ${data.dayDesc[d][0]}\n${routesFor(d,mode,memory).map((id,i)=>`${i+1}. ${lookup[id].name}`).join('\n')}`).join('\n\n')+'\n\n예약 (원본 유지)\n'+reservations.join('\n')+'\n\n※ 초록선은 저장 또는 새 조회한 도보 경로입니다. 구간별 출처·조회시각은 지도 카드를 확인하세요. 버스·선 없는 구간의 실제 경로와 시간은 미확인입니다. 후보 삽입 순서는 직선 거리 참고이며 이동 가능성을 보장하지 않습니다.';
 }
 // Image loading events never prove roads/coastline or provider policy acceptance.
 function createBasemapState(){

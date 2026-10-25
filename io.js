@@ -1,5 +1,5 @@
 /* Local JSON boundary. No network, evaluation, or legacy-key writes. */
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.TripIO=api;})(globalThis,function(){
+(function(root,factory){const api=factory(typeof module==='object'&&module.exports?require('./routing.js'):root.TripRouting);if(typeof module==='object'&&module.exports)module.exports=api;else root.TripIO=api;})(globalThis,function(R){
 'use strict';
 const MAX_BYTES=2*1024*1024,KEY='local-trip-shell-v05';
 const own=(o,k)=>Object.hasOwn(o,k),object=o=>o&&typeof o==='object'&&!Array.isArray(o);
@@ -25,7 +25,7 @@ function validateTrip(t){
  return t;
 }
 function validateMemory(m){need(object(m)&&Array.isArray(m.visited)&&object(m.add),'방문·추가 기록 형식이 아닙니다.');list(m.visited,5000).forEach(id);need(Object.keys(m.add).length<=100,'추가 기록 날짜가 너무 많습니다.');for(const [d,a] of Object.entries(m.add)){id(d);list(a,5000).forEach(id);}return m;}
-function validateState(s){need(object(s)&&s.schema==='local-trip-backup-v1','전체 백업 형식이 아닙니다.');validateTrip(s.trip);validateMemory(s.memory);if(s.legacyImports)list(s.legacyImports,100);return s;}
+function validateState(s){need(object(s)&&s.schema==='local-trip-backup-v1','전체 백업 형식이 아닙니다.');validateTrip(s.trip);validateMemory(s.memory);if(s.legacyImports)list(s.legacyImports,100);if(own(s,'routeCache'))R.validateCache(s.routeCache,s.trip);return s;}
 function parse(text){need(typeof text==='string'&&new TextEncoder().encode(text).length<=MAX_BYTES,'파일이 너무 큽니다. 최대 2MB입니다.');let value;try{value=JSON.parse(text);}catch(e){throw Error('JSON 파일을 읽을 수 없습니다.');}tree(value);return value;}
 function prepare(text,current,kind='trip'){
  const raw=parse(text);let next;
