@@ -44,6 +44,7 @@ function renderCard(){
   const walk=C.directionLink(leg,'walk'),traffic=C.directionLink(leg,'traffic');
   if(walk.url===traffic.url){actions.append(link(walk.label,walk.url),link('출발 장소 검색 ↗',C.kakaoSearch(C.lookup[leg.a])));}else{actions.append(link(walk.label,walk.url),link(traffic.label,traffic.url));}
   if(leg.routeOrigin==='calculated'||!C.highConfidence(C.lookup[leg.a])||!C.highConfidence(C.lookup[leg.b]))host.append(node('p','개략 핀 기준, 출발·도착 확인','pinWarning'));
+  if(leg.routeSnap?.some(n=>n>100))host.append(node('p',`핀과 보행로 연결점 차이: 출발 ${Math.round(leg.routeSnap[0])}m · 도착 ${Math.round(leg.routeSnap[1])}m. 경로 끝의 실제 접근 지점을 확인하세요.`,'pinWarning'));
   if(R.explicitWalk(C,leg)&&!leg.routeStatus){const query=button('이 구간을 도보로 조회',()=>routeClient.request(leg,{explicit:true}));query.disabled=!canQuery();actions.append(query);}
   if(leg.routeStatus==='failed'){const retry=button('이 구간 도보 다시 시도',()=>routeClient.request(leg,{explicit:!!leg.routeExplicit,retry:true}));retry.disabled=!canQuery();actions.append(retry);}
   if(leg.routeStatus==='pending')host.append(node('p',leg.routeMessage,'routePending'));

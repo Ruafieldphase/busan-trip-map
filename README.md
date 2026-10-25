@@ -42,6 +42,8 @@ The viewer loads [Leaflet1.9.4](https://leafletjs.com/) from unpkg after a trip 
 
 Walking connections use the [FOSSGIS foot-routing service](https://routing.openstreetmap.de/about.html), with serialized requests at least 1.1 seconds apart, local caching and no automatic retries. Its dedicated pedestrian endpoint is essential: changing a profile label on a car-only engine does not make a walking route. Data: © OpenStreetMap contributors. [Fix the map](https://www.openstreetmap.org/). Public demo routing has no availability guarantee; saved geometry remains available if a new request fails. Pin locations and actual access restrictions still require checking.
 
+Network snapping is bounded to 100m for normal endpoints and 150m for explicitly approximate pins. The original pins are preserved; only the returned pedestrian path is drawn. Cards disclose each pin-to-path distance and prominently flag gaps over 100m. The undrawn gap is not proof of access to a beach, building or entrance.
+
 Validation includes offline core/import checks, local preview boundary checks and desktop-browser import/export/route-state checks. Physical Android acceptance and current real-world place/transit information remain separate verification tasks.
 
 For development discussions, use synthetic data rather than private trip files. This public repository is the generic viewer; personal data, local research evidence and private test fixtures are excluded.

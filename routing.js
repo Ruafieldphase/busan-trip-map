@@ -25,11 +25,12 @@ function scope(trip){
 }
 const key=(a,b,from,to)=>JSON.stringify([a,b,from,to,PROFILE,PROVIDER]);
 const requireValue=(ok,message)=>{if(!ok)throw Error(message);};
-function geometry(coords,distance,duration,from,to,snap){
+const pinLimits=(a,b)=>[a,b].map(p=>p.pin_approx===true?150:100);
+function geometry(coords,distance,duration,from,to,snap,limits=[100,100]){
  requireValue(Array.isArray(coords)&&coords.length>=2&&coords.length<=20000&&coords.every(point),'잘못된 경로 좌표');
  requireValue(Number.isFinite(distance)&&distance>0&&distance<=10000000&&Number.isFinite(duration)&&duration>0&&duration<=10000000,'잘못된 거리·시간');
- requireValue(Array.isArray(snap)&&snap.length===2&&snap.every(n=>Number.isFinite(n)&&n>=0&&n<=100),'핀에서 보행로까지 100m 초과 또는 연결 근거 없음');
- requireValue(meters(from,coords[0])<=100&&meters(to,coords[coords.length-1])<=100,'핀에서 보행로까지 100m 초과');
+ requireValue(Array.isArray(snap)&&snap.length===2&&snap.every((n,i)=>Number.isFinite(n)&&n>=0&&n<=limits[i]),'핀과 보행로 차이가 허용 범위를 넘거나 연결 근거가 없습니다 (일반 100m · 개략 핀 150m).');
+ requireValue(meters(from,coords[0])<=limits[0]&&meters(to,coords[coords.length-1])<=limits[1],'핀과 보행로 차이가 허용 범위를 넘습니다.');
  requireValue(coords.some(p=>meters(coords[0],p)>.1),'빈 경로');
 }
 function parseResponse(body,spec,queriedAt){
@@ -39,7 +40,7 @@ function parseResponse(body,spec,queriedAt){
  const coords=route.geometry.coordinates.map(p=>Array.isArray(p)&&p.length===2?[p[1],p[0]]:null);
  requireValue(Array.isArray(w)&&w.length===2,'경로 진입점 근거 없음');
  const snap=w.map(p=>p.distance);
- geometry(coords,route.distance,route.duration,spec.from,spec.to,snap);
+ geometry(coords,route.distance,route.duration,spec.from,spec.to,snap,spec.pinLimits);
  w.forEach((p,i)=>{requireValue(Array.isArray(p.location)&&point([p.location[1],p.location[0]]),'잘못된 경로 진입점');requireValue(meters([p.location[1],p.location[0]],coords[i?coords.length-1:0])<=2,'경로와 진입점 불일치');});
  return {key:spec.key,a:spec.a,b:spec.b,from:spec.from,to:spec.to,profile:PROFILE,provider:PROVIDER,coords,distance:route.distance,duration:route.duration,snap,queriedAt,explicit:!!spec.explicit};
 }
@@ -50,7 +51,7 @@ function validateCache(cache,trip){
   requireValue(e&&places.has(e.a)&&places.has(e.b)&&point(e.from)&&point(e.to)&&JSON.stringify(e.from)===JSON.stringify(coord(places.get(e.a)))&&JSON.stringify(e.to)===JSON.stringify(coord(places.get(e.b))),'캐시 장소·좌표 불일치');
   requireValue(e.profile===PROFILE&&e.provider===PROVIDER&&e.key===key(e.a,e.b,e.from,e.to)&&!seen.has(e.key),'캐시 키·보행 제공자 불일치');seen.add(e.key);
   requireValue(typeof e.explicit==='boolean'&&typeof e.queriedAt==='string'&&e.queriedAt.length<=80&&Number.isFinite(Date.parse(e.queriedAt)),'캐시 조회시각·선택 근거 없음');
-  geometry(e.coords,e.distance,e.duration,e.from,e.to,e.snap);vertices+=e.coords.length;requireValue(vertices<=50000,'경로 캐시가 너무 큽니다.');
+  geometry(e.coords,e.distance,e.duration,e.from,e.to,e.snap,pinLimits(places.get(e.a),places.get(e.b)));vertices+=e.coords.length;requireValue(vertices<=50000,'경로 캐시가 너무 큽니다.');
  }
  if(cache.failures!==undefined){requireValue(Array.isArray(cache.failures)&&cache.failures.length<=500,'잘못된 조회 실패 기록');for(const e of cache.failures){requireValue(e&&places.has(e.a)&&places.has(e.b)&&e.key===key(e.a,e.b,coord(places.get(e.a)),coord(places.get(e.b)))&&!seen.has(e.key),'실패 기록 구간 불일치');seen.add(e.key);requireValue(typeof e.explicit==='boolean'&&typeof e.message==='string'&&e.message.length<=240,'잘못된 실패 기록');}}
  return cache;
@@ -63,13 +64,13 @@ function explicitWalk(core,leg){
  if(transitIntent(leg))return false;
  return ['이동수단 미확인','unknown','미확인'].includes(leg.mode)&&meters(coord(core.lookup[leg.a]),coord(core.lookup[leg.b]))<=15000;
 }
-function asLeg(original,e){return {...original,type:'walk',mode:'도보 · 새 조회 경로',coords:e.coords,distance:e.distance,duration:e.duration,source:'FOSSGIS Routing / OSRM foot · © OpenStreetMap contributors',queriedAt:e.queriedAt,routeOrigin:'calculated',routeStatus:'ready',desc:(e.explicit?'이 구간을 도보로 선택했습니다. 원본 주의: '+original.desc+' ':'')+'보행 엔진 추정, 휴식·현재 교통 미반영. 개략 핀 기준, 출발·도착 확인. 현장 통제·계단·진입로는 별도 확인.'};}
+function asLeg(original,e){return {...original,type:'walk',mode:'도보 · 새 조회 경로',coords:e.coords,distance:e.distance,duration:e.duration,source:'FOSSGIS Routing / OSRM foot · © OpenStreetMap contributors',queriedAt:e.queriedAt,routeOrigin:'calculated',routeStatus:'ready',routeSnap:e.snap,desc:(e.explicit?'이 구간을 도보로 선택했습니다. 원본 주의: '+original.desc+' ':'')+`경로 연결점은 출발 핀과 ${Math.round(e.snap[0])}m, 도착 핀과 ${Math.round(e.snap[1])}m 떨어져 있습니다. 핀은 그대로 두고 보행로만 표시하며, 핀까지의 직선 연결이나 보행 가능성을 만들지 않습니다. `+'보행 엔진 추정, 휴식·현재 교통 미반영. 개략 핀 기준, 출발·도착 확인. 현장 통제·계단·진입로는 별도 확인.'};}
 function create(options={}){
  const fetcher=options.fetch||((...args)=>globalThis.fetch(...args)),now=options.now||Date.now;
  const later=options.setTimeout||setTimeout,clear=options.clearTimeout||clearTimeout;
  const changed=options.onChange||(()=>{}),saved=options.onCache||(()=>{}),interval=Math.max(1100,options.interval||1100),timeout=options.timeout||15000;
  let core,cache,entries=new Map(),statuses=new Map(),choices=new Set(),desired=new Map(),base=[],enabled=false,epoch=0,lastStart=-Infinity,timer=null,flight=null;
- const spec=leg=>{const from=coord(core.lookup[leg.a]),to=coord(core.lookup[leg.b]);return {a:leg.a,b:leg.b,from,to,key:key(leg.a,leg.b,from,to)};};
+ const spec=leg=>{const a=core.lookup[leg.a],b=core.lookup[leg.b],from=coord(a),to=coord(b);return {a:leg.a,b:leg.b,from,to,pinLimits:pinLimits(a,b),key:key(leg.a,leg.b,from,to)};};
  function cancelFlight(){if(flight){flight.cancel();}}
  function activate(next,stored,{enabled:allow=false}={}){
   epoch++;if(timer!==null){clear(timer);timer=null;}cancelFlight();core=next;
