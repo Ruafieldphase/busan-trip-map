@@ -1,8 +1,9 @@
 /* Pure itinerary and basemap evidence. No provider calls. */
 (function(root,factory){
- const api={create:factory};
+ const T=typeof module==='object'&&module.exports?require('./composite.js'):root.TripComposite;
+ const api={create:data=>factory(data,T)};
  if(typeof module==='object'&&module.exports)module.exports=api;else root.BusanCore=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(data){
+})(typeof globalThis!=='undefined'?globalThis:this,function(data,T){
 'use strict';
 const MEMORY_KEY=data.legacyMemoryKey;
 const lookup=Object.assign(Object.create(null),Object.fromEntries(data.places.map(p=>[p.id,p])));
@@ -46,6 +47,8 @@ const geometryCache=new Map();
 const edgeKey=(a,b)=>JSON.stringify([a,b]);
 presets.flatMap(p=>segmentPreset(p)).forEach(leg=>geometryCache.set(edgeKey(leg.a,leg.b),leg));
 function chooseLeg(a,b,day,mode){
+ const transport=T.choose(data.transportLegs,a,b,day,mode);
+ if(transport){const transportModel=T.model(transport),original=data.legRules.find(r=>r.a===a&&r.b===b&&(!r.day||r.day===day)&&(!r.mode||r.mode===mode));return {a,b,type:'composite',mode:'복합 이동 · '+(transportModel.status==='documented'?'원본 근거 갖춤':'일부·미확인'),transport,transportModel,coords:null,distance:null,duration:null,source:transportModel.sourceText,queriedAt:transportModel.observedAt,desc:'가져온 단계 순서·개별 출처를 표시합니다. 현재 제공자·현장·운영 재검증은 하지 않았습니다.'+(original?' 원본 이동 메모: '+original.leg.mode+' / '+original.leg.desc+' / '+original.leg.source+' / '+original.leg.queriedAt:'')};}
  const unknown={a,b,type:'transit',mode:'이동수단 미확인',coords:null,distance:null,duration:null,source:'원본 장소·정류장 정보 / 길찾기 미조회',queriedAt:'신규 조회 없음',desc:'버스·지하철·택시 등 경로와 시간을 외부 지도에서 확인하세요.'};
  const rule=data.legRules.find(r=>r.a===a&&r.b===b&&(!r.day||r.day===day)&&(!r.mode||r.mode===mode));
  if(rule)return rule.leg;
@@ -55,9 +58,11 @@ function chooseLeg(a,b,day,mode){
 }
 function makeLegs(day,mode,memory){const ids=routesFor(day,mode,memory);return day==='all'?[]:ids.slice(1).map((b,i)=>chooseLeg(ids[i],b,day,mode));}
 const drawnLegs=legs=>legs.filter(l=>l.coords&&l.coords.length>1);
+const geometryPoints=legs=>legs.flatMap(l=>l.transportModel?l.transportModel.steps.flatMap(s=>s.coords||[]):l.coords||[]);
 // Display topology is separate from acquired road geometry and never enters the trip/cache.
 function displayLegs(legs){return legs.map((leg,i)=>{
  const a=lookup[leg.a],b=lookup[leg.b],from=[a.lat,a.lon],to=[b.lat,b.lon],known=!!(leg.coords&&leg.coords.length>1),coords=known?leg.coords:[from,to];
+ if(leg.transportModel){const m=leg.transportModel,segments=m.steps.filter(s=>s.coords);return {leg,from:i+1,to:i+2,kind:'composite',coords:[from,to],segments,gaps:m.gaps.map(g=>g.coords),gapMessages:m.gaps.map(g=>g.message),drawOrder:segments.length===0,label:`${i+1}→${i+2}`,description:leg.mode+' · 현재 제공자 재검증 아님'};}
  const gaps=[];if(known){if(distance(a,{lat:coords[0][0],lon:coords[0][1]})>.5)gaps.push([from,coords[0]]);const end=coords[coords.length-1];if(distance(b,{lat:end[0],lon:end[1]})>.5)gaps.push([end,to]);}
  return {leg,from:i+1,to:i+2,kind:known?'road':'order',coords,gaps,label:`${i+1}→${i+2}`,description:known?leg.mode+' · 실제 경로 데이터':'이동 순서만 표시 · 실제 노선 미확인'};
 });}
@@ -66,8 +71,8 @@ function pathMidpoint(coords){
  for(let i=0;i<lengths.length;i++){if(at<=lengths[i]||i===lengths.length-1){const a=coords[i],b=coords[i+1],t=lengths[i]?at/lengths[i]:0;return {point:[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t],angle:Math.atan2(-(b[0]-a[0])*111,(b[1]-a[1])*91)*180/Math.PI};}at-=lengths[i];}
  return {point:coords[0],angle:0};
 }
-const routeSummary=legs=>{const ready=drawnLegs(legs),fresh=ready.filter(l=>l.routeOrigin==='calculated').length,pending=legs.filter(l=>l.routeStatus==='pending').length,failed=legs.filter(l=>l.routeStatus==='failed').length;return `경로 ${ready.length}/${legs.length}구간 · 저장 ${ready.length-fresh} · 새 조회 ${fresh} · 대기 ${pending} · 실패 ${failed} · 미확인 ${legs.length-ready.length-pending-failed}`;};
-function textMeasure(leg){if(leg.coords&&leg.distance!=null&&leg.duration!=null)return `${(leg.distance/1000).toFixed(2)}km · 약 ${Math.round(leg.duration/60)}분 (${leg.routeOrigin==='calculated'?'새 조회':'원본'} 보행 엔진 추정, 휴식·현재 교통 제외)`;if(leg.routeStatus==='pending')return leg.routeMessage||'보행 경로 대기 중';if(leg.routeStatus==='failed')return '도보 조회 실패 · '+leg.routeMessage;return '경로·소요시간 미확인';}
+const routeSummary=legs=>{const ready=drawnLegs(legs),fresh=ready.filter(l=>l.routeOrigin==='calculated').length,composite=legs.filter(l=>l.transportModel),documented=composite.filter(l=>l.transportModel.status==='documented').length,pending=legs.filter(l=>l.routeStatus==='pending').length,failed=legs.filter(l=>l.routeStatus==='failed').length;return `보행 선형 ${ready.length}/${legs.length}구간 · 저장 ${ready.length-fresh} · 새 조회 ${fresh} · 복합 원본 근거 ${documented} / 일부 ${composite.length-documented} · 대기 ${pending} · 실패 ${failed} · 미확인 ${legs.length-ready.length-composite.length-pending-failed}`;};
+function textMeasure(leg){if(leg.transportModel)return `${leg.transportModel.steps.length}단계 · ${leg.transportModel.status==='documented'?'원본 근거 갖춤 · 현재 제공자 재검증 아님':'일부 근거·연결 미확인'} · 총시간 합산 안 함`;if(leg.coords&&leg.distance!=null&&leg.duration!=null)return `${(leg.distance/1000).toFixed(2)}km · 약 ${Math.round(leg.duration/60)}분 (${leg.routeOrigin==='calculated'?'새 조회':'원본'} 보행 엔진 추정, 휴식·현재 교통 제외)`;if(leg.routeStatus==='pending')return leg.routeMessage||'보행 경로 대기 중';if(leg.routeStatus==='failed')return '도보 조회 실패 · '+leg.routeMessage;return '경로·소요시간 미확인';}
 function placeQuery(p){return Object.hasOwn(data.placeQueries,p.id)?data.placeQueries[p.id]:p.name;}
 const highConfidence=p=>!p.pin_approx&&!p.coord_source.includes('시범판');
 const kakaoSearch=p=>'https://map.kakao.com/link/search/'+encodeURIComponent(placeQuery(p));
@@ -80,7 +85,7 @@ function directionLink(leg,method){
 }
 function copySummary(day,mode,memory){
  const days=day==='all'?Object.keys(data.dayRoutes):[day];
- return days.map(d=>`${data.dayLabels[d]} ${data.dayDesc[d][0]}\n${routesFor(d,mode,memory).map((id,i)=>`${i+1}. ${lookup[id].name}`).join('\n')}`).join('\n\n')+'\n\n예약 (원본 유지)\n'+reservations.join('\n')+'\n\n※ 초록선은 저장 또는 새 조회한 도보 경로입니다. 구간별 출처·조회시각은 지도 카드를 확인하세요. 버스·선 없는 구간의 실제 경로와 시간은 미확인입니다. 후보 삽입 순서는 직선 거리 참고이며 이동 가능성을 보장하지 않습니다.';
+ return days.map(d=>`${data.dayLabels[d]} ${data.dayDesc[d][0]}\n${routesFor(d,mode,memory).map((id,i)=>`${i+1}. ${lookup[id].name}`).join('\n')}`).join('\n\n')+'\n\n예약 (원본 유지)\n'+reservations.join('\n')+'\n\n※ 초록선은 저장·새 조회 또는 가져온 도보 선형입니다. 가져온 복합 이동은 단계별 교통수단·출처·시각·미확인 연결을 지도 카드에서 확인하세요. 가져온 원본 확인 주장은 현재 제공자 재검증이 아닙니다. 실제 선형이 없는 구간의 경로·시간은 미확인입니다. 후보 삽입 순서는 직선 거리 참고이며 이동 가능성을 보장하지 않습니다.';
 }
 // Image loading events never prove roads/coastline or provider policy acceptance.
 function createBasemapState(){
@@ -100,5 +105,6 @@ function createBasemapState(){
  }
  return {event,snapshot};
 }
-return {data,lookup,MEMORY_KEY,reservations,normalizeMemory,distance,routesFor,decodePolyline,segmentPreset,presets,geometryCache,edgeKey,chooseLeg,makeLegs,drawnLegs,displayLegs,pathMidpoint,routeSummary,textMeasure,placeQuery,highConfidence,kakaoSearch,kakaoMap,navUrl,directionLink,copySummary,createBasemapState};
+return {data,lookup,MEMORY_KEY,reservations,normalizeMemory,distance,routesFor,decodePolyline,segmentPreset,presets,geometryCache,edgeKey,chooseLeg,makeLegs,drawnLegs,geometryPoints,displayLegs,pathMidpoint,routeSummary,textMeasure,placeQuery,highConfidence,kakaoSearch,kakaoMap,navUrl,directionLink,copySummary,createBasemapState};
 });
+

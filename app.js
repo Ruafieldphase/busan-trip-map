@@ -8,6 +8,17 @@ let leaf=null,tileLayer=null,markerLayer=null,routeLayer=null;
 let tileTimer=null,assetTimer=null,assetsLoading=false;
 let basemap;
 let importEpoch=0;
+// Reviewed fixed gateway; configuration alone never enables transport.
+const LIVE_TRANSIT_ENDPOINT="https://busan-trip-transit.kuirvana.workers.dev/v1/transit";
+const liveDisplay=window.TripLiveTransit?.create({onChange:()=>{if(trip)render(false);}});
+const liveOwner=liveDisplay&&window.TripLiveRequest?.create({display:liveDisplay,endpoint:LIVE_TRANSIT_ENDPOINT,onChange:()=>{if(trip)render(false);}});
+function liveSpecs(legs){return legs.map(l=>{
+ const a=C.lookup[l.a],b=C.lookup[l.b],t=l.transport;
+ const from=t?.endpoints.find(p=>p.id===t.from),to=t?.endpoints.find(p=>p.id===t.to);
+ return {a:l.a,b:l.b,from:[a.lat,a.lon],to:[b.lat,b.lon],fromKind:from?.kind||'place',toKind:to?.kind||'place',approx:[a.pin_approx,b.pin_approx]};
+});}
+const measure=leg=>leg.liveTransit?`${leg.transportModel.steps.length}단계 · 현재 응답 · 현장·도로 미검증 · 총시간 합산 안 함`:C.textMeasure(leg);
+const displayLegs=()=>C.displayLegs(activeLegs).map(d=>d.leg.liveTransit?{...d,description:d.leg.mode+' · 현장·도로 미검증'}:d.leg.liveTransitMessage?{...d,description:d.description+' · '+d.leg.liveTransitMessage}:d);
 const routeClient=R.create({onChange:()=>{if(trip)render(false);},onCache:cache=>{state={...state,routeCache:cache};persist();}});
 const canQuery=()=>['http:','https:'].includes(location.protocol);
 const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(cls)el.className=cls;return el;};
@@ -20,7 +31,7 @@ function activePlaces(){const route=ids();return C.data.places.filter(p=>route.i
 function selectedLeg(){return selection.type==='leg'?activeLegs.find(l=>l.a===selection.a&&l.b===selection.b):null;}
 function sequence(){const route=ids(),out=[];route.forEach((id,i)=>{out.push({type:'place',id});if(currentDay!=='all'&&i<route.length-1)out.push({type:'leg',a:id,b:route[i+1]});});return out;}
 const sameSelection=(a,b)=>a.type===b.type&&(a.type==='place'?a.id===b.id:a.a===b.a&&a.b===b.b);
-function select(value,focus=true){selection=value;renderCard();renderItinerary();renderLegStrip();renderSchematic();if(focus&&leaf){if(value.type==='place'){const p=C.lookup[value.id];leaf.panTo([p.lat,p.lon]);}else{const leg=selectedLeg();if(leg){const p=C.lookup[leg.a],q=C.lookup[leg.b];leaf.fitBounds(L.latLngBounds([[p.lat,p.lon],...(leg.coords||[]),[q.lat,q.lon]]).pad(.18),{maxZoom:16,padding:[20,55]});}}}}
+function select(value,focus=true){selection=value;renderCard();renderItinerary();renderLegStrip();renderSchematic();if(focus&&leaf){if(value.type==='place'){const p=C.lookup[value.id];leaf.panTo([p.lat,p.lon]);}else{const leg=selectedLeg();if(leg){const p=C.lookup[leg.a],q=C.lookup[leg.b];leaf.fitBounds(L.latLngBounds([[p.lat,p.lon],...C.geometryPoints([leg]),[q.lat,q.lon]]).pad(.18),{maxZoom:16,padding:[20,55]});}}}}
 function focusCard(){document.querySelector('.selectedCard').scrollIntoView({block:'nearest',behavior:'smooth'});}
 function selectFromPanel(value){select(value);focusCard();}
 function toggleVisited(id){memory.visited=memory.visited.includes(id)?memory.visited.filter(x=>x!==id):[...memory.visited,id];persist();render(false);}
@@ -28,7 +39,7 @@ function addPlace(id){if(currentDay==='all'||ids().includes(id))return;(memory.a
 function removePlace(id){memory.add[currentDay]=(memory.add[currentDay]||[]).filter(x=>x!==id);persist();render(false);}
 function renderLegStrip(){
  const host=$('#legStrip');host.replaceChildren();
- for(const d of C.displayLegs(activeLegs)){const b=button(d.label,()=>select({type:'leg',a:d.leg.a,b:d.leg.b}));b.className='legStep '+d.kind+(selection.type==='leg'&&selection.a===d.leg.a&&selection.b===d.leg.b?' active':'');b.dataset.edge=d.leg.a+':'+d.leg.b;b.setAttribute('aria-label',d.label+' · '+d.description);host.append(b);}
+ for(const d of displayLegs()){const b=button(d.label,()=>select({type:'leg',a:d.leg.a,b:d.leg.b}));b.className='legStep '+d.kind+(selection.type==='leg'&&selection.a===d.leg.a&&selection.b===d.leg.b?' active':'');b.dataset.edge=d.leg.a+':'+d.leg.b;b.setAttribute('aria-label',d.label+' · '+d.description);host.append(b);}
  if(currentDay!=='all'&&!routeClient.enabled){const b=button('도보 경로 연결',()=>$('#enableRoutes').click());b.disabled=!canQuery();host.append(b);}
 }
 function renderCard(){
@@ -41,13 +52,25 @@ function renderCard(){
   const actions=node('div',null,'actions');actions.append(link('네이버 검색 ↗',C.navUrl(p)),link(p.pin_approx?'카카오 검색 ↗':'카카오 위치 ↗',C.kakaoMap(p)),button(memory.visited.includes(p.id)?'✓ 방문 표시됨':'방문 표시',()=>toggleVisited(p.id)));
   if(currentDay!=='all'&&!ids().includes(p.id))actions.append(button('오늘 동선에 추가',()=>addPlace(p.id)));
   else if(currentDay!=='all'&&(memory.add[currentDay]||[]).includes(p.id))actions.append(button('추가 취소',()=>removePlace(p.id)));
-  host.append(node('p',p.note||''),actions);$('#selectedSource').textContent=`선택 장소 원본 메모: ${p.note||'없음'} / 원본 출처: ${p.coord_source}. 이번 작업에서 위치·영업·통제 여부를 재조회하지 않았습니다.`;
+  host.append(node('p',p.note||''),actions);$('#selectedSource').textContent=`선택 장소 메모: ${p.note||'없음'} / 좌표 출처: ${p.coord_source}. 장소별 최신 확인 범위는 메모를 확인하세요. 건물 핀·영업·당일 현장 통행 여부는 별도 확인이 필요합니다.`;
  }else{
   const leg=selectedLeg();if(!leg)return;
   const number=ids().indexOf(leg.a)+1;
-  host.append(node('h2',`${number}→${number+1} · `+C.lookup[leg.a].name+' → '+C.lookup[leg.b].name),node('p',leg.mode+' · '+C.textMeasure(leg),'measure'),node('p',leg.source+' / '+leg.queriedAt,'source'));
-  if(!leg.coords)host.append(node('p','지도 점선은 두 번호의 이동 순서입니다. 실제 도로·버스 노선이 확인된 선은 아닙니다.','pinWarning'));
+  host.append(node('h2',`${number}→${number+1} · `+C.lookup[leg.a].name+' → '+C.lookup[leg.b].name),node('p',leg.mode+' · '+measure(leg),'measure'),node('p',leg.source+' / '+leg.queriedAt,'source'));
+  if(leg.liveTransitMessage)host.append(node('p',leg.liveTransitMessage,leg.liveTransitRequestState==='pending'?'routePending':'pinWarning'));
+  if(leg.transportModel){
+   const m=leg.transportModel,steps=node('ol',null,'transportSteps');
+   for(const s of m.steps){const item=node('li');item.dataset.step=s.id;item.append(node('strong',s.instruction),node('p',s.measure),node('p',s.evidenceText,'source'),node('p','선형: '+s.geometryEvidence,'source'));
+    if(s.serviceEvidence)item.append(node('p','노선·방향·승하차: '+s.serviceEvidence,'source'));
+    item.append(node('p','출발 끝점: '+window.TripComposite.evidenceText(s.from.evidence)+' / 도착 끝점: '+window.TripComposite.evidenceText(s.to.evidence),'source'));
+    steps.append(item);
+   }
+   host.append(steps,node('p',m.live?'현재 응답을 표시합니다. 실제 도로 정합·현장 통제·운영·출입구 검증은 별도입니다.':m.status==='documented'?'각 단계에 원본 근거가 있습니다. 가져온 확인 주장을 표시하며 현재 제공자 확인·현장 통제·운영 검증은 별도입니다.':'일부 구간만 있습니다. 연결 도보·환승·진입점 또는 개별 근거를 확인해야 합니다.','pinWarning'));
+   if(m.issues.length){const missing=node('ul',null,'transportIssues');for(const message of m.issues)missing.append(node('li',message));host.append(missing);}
+   host.append(node('p',(m.live?'파랑: 버스 · 보라: 지하철 또는 식별 근거가 있는 철도 · 초록: 도보 · 금색: 환승. 실선은 현재 응답 선형이며 도로 정합 확인을 뜻하지 않습니다. 회색 점선은 연결 미확인 간격입니다.':'파랑: 버스 · 보라: 지하철·철도 · 초록: 도보 · 금색: 환승. 해당 단계의 원본 근거가 없으면 점선으로 표시합니다. 회색 점선은 실제 경로가 없는 연결 간격입니다.'),'source'));
+  }else if(!leg.coords)host.append(node('p','지도 점선은 두 번호의 이동 순서입니다. 실제 도로·버스 노선이 확인된 선은 아닙니다.','pinWarning'));
   const actions=node('div',null,'actions');
+  if(liveOwner?.configured){const query=button('이 구간 대중교통 확인',()=>liveOwner.request(liveSpecs([leg])[0]));query.disabled=!liveOwner.enabled||!!leg.liveTransit||['queued','pending','failed','exhausted'].includes(leg.liveTransitRequestState);actions.append(query);}
   const walk=C.directionLink(leg,'walk'),traffic=C.directionLink(leg,'traffic');
   if(walk.url===traffic.url){actions.append(link(walk.label,walk.url),link('출발 장소 검색 ↗',C.kakaoSearch(C.lookup[leg.a])));}else{actions.append(link(walk.label,walk.url),link(traffic.label,traffic.url));}
   if(leg.routeOrigin==='calculated'||!C.highConfidence(C.lookup[leg.a])||!C.highConfidence(C.lookup[leg.b]))host.append(node('p','개략 핀 기준, 출발·도착 확인','pinWarning'));
@@ -67,7 +90,7 @@ function renderItinerary(){
   if(currentDay==='all'||i>=route.length-1)return;
   const leg=activeLegs[i],v={type:'leg',a:leg.a,b:leg.b};
   const row=button(leg.mode,()=>selectFromPanel(v));row.className='leg'+(sameSelection(v,selection)?' active':'');row.dataset.edge=leg.a+':'+leg.b;
-  row.append(node('small',C.textMeasure(leg)),node('small',leg.source+' / '+leg.queriedAt));host.append(row);
+  row.append(node('small',measure(leg)),node('small',leg.source+' / '+leg.queriedAt));host.append(row);
  });
 }
 function renderCandidates(){
@@ -76,7 +99,7 @@ function renderCandidates(){
  for(const p of candidates){const row=node('article',null,'candidate');row.append(node('strong',p.name,memory.visited.includes(p.id)?'visited':''),node('p',p.area+' · '+p.cat+' · '+(p.pin_approx?'개략 핀':'원본 근거 있음')));const actions=node('div',null,'actions');actions.append(button('선택',()=>selectFromPanel({type:'place',id:p.id})));if(currentDay!=='all')actions.append(button('동선에 추가',()=>addPlace(p.id)));row.append(actions);host.append(row);}
  $('#resetAdded').disabled=currentDay==='all'||!(memory.add[currentDay]||[]).length;
 }
-function fitLeaf(){if(!leaf)return;const points=ids().map(id=>C.lookup[id]);leaf.fitBounds(L.latLngBounds([...points.map(p=>[p.lat,p.lon]),...C.drawnLegs(activeLegs).flatMap(l=>l.coords)]).pad(.18),{padding:[35,90],maxZoom:15});}
+function fitLeaf(){if(!leaf)return;const points=ids().map(id=>C.lookup[id]);leaf.fitBounds(L.latLngBounds([...points.map(p=>[p.lat,p.lon]),...C.geometryPoints(activeLegs)]).pad(.18),{padding:[35,90],maxZoom:15});}
 function renderLeafContent(fit){
  if(!leaf)return;markerLayer.clearLayers();routeLayer.clearLayers();const route=ids();
  for(const p of activePlaces()){
@@ -84,10 +107,17 @@ function renderLeafContent(fit){
   const icon=L.divIcon({className:'',html:`<div class="mapDot" style="width:${size}px;height:${size}px;background:${(Object.hasOwn(colors,p.cat)?colors[p.cat]:'#a6c9d2')};opacity:${active?1:.65}">${active?n+1:''}</div>`,iconSize:[size,size],iconAnchor:[size/2,size/2]});
   L.marker([p.lat,p.lon],{icon,title:p.name,alt:p.name,riseOnHover:true}).on('click',()=>select({type:'place',id:p.id},false)).addTo(markerLayer);
  }
- for(const d of C.displayLegs(activeLegs)){
+ for(const d of displayLegs()){
   const {leg}=d,selectLeg=()=>select({type:'leg',a:leg.a,b:leg.b},false),known=d.kind==='road';
-  L.polyline(d.coords,{className:'route-'+d.kind,color:known?'#269666':'#f5a94f',weight:known?5:4,opacity:.94,dashArray:known?null:'9 7'}).bindTooltip(node('span',d.label+' · '+d.description)).on('click',selectLeg).addTo(routeLayer);
-  for(const gap of d.gaps)L.polyline(gap,{className:'route-pin-gap',color:'#8a9baa',weight:3,opacity:.9,dashArray:'3 5'}).bindTooltip(node('span',d.label+' · 핀과 보행로 사이 간격 · 실제 보행로 미확인')).on('click',selectLeg).addTo(routeLayer);
+  if(d.kind!=='composite'||d.drawOrder)L.polyline(d.coords,{className:'route-'+(d.kind==='composite'?'order':d.kind),color:known?'#269666':'#f5a94f',weight:known?5:4,opacity:.94,dashArray:known?null:'9 7'}).bindTooltip(node('span',d.label+' · '+(d.kind==='composite'?'이동 순서만 표시 · 실제 노선 없음':d.description))).on('click',selectLeg).addTo(routeLayer);
+  for(const s of d.segments||[]){
+   const label=d.label+' · '+s.instruction+' · '+s.geometryEvidence;
+   L.polyline(s.coords,{className:'route-transport-'+s.mode,color:s.color,weight:5,opacity:.94,dashArray:s.geometryBacked?null:'6 6'}).bindTooltip(node('span',label)).on('click',selectLeg).addTo(routeLayer);
+   const mid=C.pathMidpoint(s.coords),icon=L.divIcon({className:'routeDirectionIcon',html:`<span class="routeDirection"><b style="transform:rotate(${mid.angle.toFixed(1)}deg)">▶</b><span>${d.label} · ${s.number}</span></span>`,iconSize:[90,24],iconAnchor:[45,12]});
+   L.marker(mid.point,{icon,title:label,alt:label,zIndexOffset:-100}).on('click',selectLeg).addTo(routeLayer);
+  }
+  for(const [i,gap] of d.gaps.entries())L.polyline(gap,{className:'route-pin-gap',color:'#8a9baa',weight:3,opacity:.9,dashArray:'3 5'}).bindTooltip(node('span',d.label+' · '+(d.gapMessages?.[i]||'핀과 보행로 사이 간격 · 실제 보행로 미확인'))).on('click',selectLeg).addTo(routeLayer);
+  if(d.kind==='composite'&&!d.drawOrder)continue;
   const mid=C.pathMidpoint(d.coords),icon=L.divIcon({className:'routeDirectionIcon',html:`<span class="routeDirection ${known?'known':'unknown'}"><b style="transform:rotate(${mid.angle.toFixed(1)}deg)">▶</b><span>${d.label}${known?'':' · 순서'}</span></span>`,iconSize:[68,24],iconAnchor:[34,12]});
   L.marker(mid.point,{icon,title:d.label+' · '+d.description,alt:d.label+' · '+d.description,zIndexOffset:-100}).on('click',selectLeg).addTo(routeLayer);
  }
@@ -100,21 +130,34 @@ function renderSchematic(){
  const spanX=Math.max(1.4,...locs.map(p=>Math.abs(p.lon-midLon)*91))*2,spanY=Math.max(1.4,...locs.map(p=>Math.abs(p.lat-midLat)*111))*2;
  const scale=Math.min(740/spanX,420/spanY),xy=(lat,lon)=>[W/2+(lon-midLon)*91*scale,H/2-(lat-midLat)*111*scale+20];
  let grid='';for(let x=100;x<W;x+=100)grid+=`<path d="M${x},0V${H}"/>`;for(let y=100;y<H;y+=100)grid+=`<path d="M0,${y}H${W}"/>`;
- const paths=C.displayLegs(activeLegs).map(d=>{const line=(coords,kind)=>`<polyline data-edge="${d.leg.a}:${d.leg.b}" data-kind="${kind}" points="${coords.map(c=>xy(c[0],c[1]).map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${kind==='road'?'#6ce5b5':kind==='order'?'#f5a94f':'#8a9baa'}" stroke-width="${kind==='pin-gap'?3:5}" ${kind!=='road'?'stroke-dasharray="9 7"':''}/>`;const m=C.pathMidpoint(d.coords),p=xy(...m.point);return line(d.coords,d.kind)+d.gaps.map(g=>line(g,'pin-gap')).join('')+`<text x="${p[0].toFixed(1)}" y="${p[1].toFixed(1)}" fill="#fff" stroke="#102a37" stroke-width="4" paint-order="stroke" font-size="16">${d.label}${d.kind==='order'?' · 순서':''}</text>`;}).join('');
+ const paths=displayLegs().map(d=>{
+  const line=(coords,kind,color,dashed,step='')=>`<polyline data-edge="${d.leg.a}:${d.leg.b}" data-kind="${kind}" data-step="${step}" points="${coords.map(c=>xy(c[0],c[1]).map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${color}" stroke-width="${kind==='pin-gap'?3:5}" ${dashed?'stroke-dasharray="9 7"':''}/>`;
+  const m=C.pathMidpoint(d.coords),p=xy(...m.point),composite=d.kind==='composite';
+  let out=(!composite||d.drawOrder)?line(d.coords,composite?'order':d.kind,d.kind==='road'?'#6ce5b5':'#f5a94f',d.kind!=='road'):'';
+  for(const s of d.segments||[]){const pos=xy(...C.pathMidpoint(s.coords).point);out+=line(s.coords,'transport-'+s.mode,s.color,!s.geometryBacked,s.id)+`<text x="${pos[0].toFixed(1)}" y="${pos[1].toFixed(1)}" fill="white" font-size="14">${d.label} · ${s.number}</text>`;}
+  return out+d.gaps.map(g=>line(g,'pin-gap','#8a9baa',true)).join('')+`<text x="${p[0].toFixed(1)}" y="${p[1].toFixed(1)}" fill="#fff" stroke="#102a37" stroke-width="4" paint-order="stroke" font-size="16">${d.label}${d.kind==='order'||d.drawOrder?' · 순서':''}</text>`;
+ }).join('');
  const pins=points.map(p=>{const [x,y]=xy(p.lat,p.lon),n=route.indexOf(p.id);if(x<15||x>885||y<95||y>580)return '';return `<g data-pin="${p.id}" role="button" tabindex="0" aria-label="${esc(p.name)}" style="cursor:pointer" transform="translate(${x.toFixed(1)},${y.toFixed(1)})"><title>${esc(p.name)}</title><circle r="${selection.id===p.id?12:n>=0?9:6}" fill="${(Object.hasOwn(colors,p.cat)?colors[p.cat]:'#aacccc')}" stroke="white" stroke-width="2"/>${n>=0?`<text x="13" y="-8" fill="#f0f8ff" stroke="#102a37" stroke-width="4" paint-order="stroke" font-size="13">${n+1}. ${esc(p.name.slice(0,12))}</text>`:''}</g>`;}).join('');
  $('#schematic').innerHTML=`<svg role="img" aria-label="위치 비례 개략도, 실제 지도 아님" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#183344"/><g stroke="#395669" opacity=".5">${grid}</g><text x="26" y="98" fill="#b4d2da" font-size="17">위치 비례 개략도 · 실제 도로·해안선 아님</text><text x="850" y="100" fill="#c4e1e7" font-size="20">↑ N</text>${paths}${pins}</svg>`;
  $('#schematic').querySelectorAll('[data-pin]').forEach(el=>{el.onclick=()=>select({type:'place',id:el.dataset.pin},false);el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();el.onclick();}};});
 }
 function render(fit=true){
- activeLegs=routeClient.view(C.makeLegs(currentDay,mode,memory));
+ const base=C.makeLegs(currentDay,mode,memory),specs=liveSpecs(base);
+ if(liveOwner)liveOwner.reconcile({trip,day:currentDay,composition:mode},specs,base);
+ else liveDisplay?.reconcile({trip,day:currentDay,composition:mode},specs);
+ activeLegs=routeClient.view(liveDisplay?liveDisplay.view(base,specs):base);
+ // A late foot completion can supply fallback data, never replace accepted transit.
+ if(liveDisplay)activeLegs=liveDisplay.view(activeLegs,specs);
  if(selection.type==='leg'&&!selectedLeg())selection={type:'place',id:ids()[0]};
  document.querySelectorAll('[data-day]').forEach(b=>{const active=b.dataset.day===currentDay;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
  document.querySelectorAll('[data-mode]').forEach(b=>{const active=b.dataset.mode===mode;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
  $('#dayDescription').textContent=currentDay==='all'?'전체 장소를 살펴보세요. 날짜를 선택하면 구간별 이동 정보가 나옵니다.':C.data.dayDesc[currentDay].join(' · ');
  const summary=currentDay==='all'?'전체: 장소만 표시':C.routeSummary(activeLegs);$('#routeStatus').textContent=summary;$('#mapRouteSummary').textContent=summary;
- $('#sequenceLegend').textContent=currentDay==='all'?'날짜를 선택하면 번호 순서대로 연결됩니다.':`번호 순서 ${activeLegs.length}/${activeLegs.length} 연결 · 초록: 도로 경로 · 주황 점선: 이동 순서, 실제 노선 미확인 · 회색 점선: 핀과 보행로 간격`;
+ $('#sequenceLegend').textContent=currentDay==='all'?'날짜를 선택하면 번호 순서대로 연결됩니다.':`번호 순서 ${activeLegs.length}/${activeLegs.length} · 초록: 도보 · 파랑: 버스 · 보라: 지하철·철도 · 금색: 환승 · 색 점선: 원본 선형 근거 미확인 · 주황 점선: 순서만 · 회색: 연결 미확인`;
  $('#routeProgress').textContent=summary;
  $('#enableRoutes').disabled=routeClient.enabled||!canQuery();$('#enableRoutes').textContent=routeClient.enabled?'도보 경로 연결 켜짐':'빠진 도보 경로 연결';
+ $('#liveConnection').hidden=!liveOwner?.configured;
+ if(liveOwner?.configured){const b=liveOwner.budget;$('#liveProgress').textContent=liveOwner.enabled?`현재 화면의 대중교통 연결 켜짐 · 세션 요청 ${b.used}/${b.limit}${b.remaining===0?' · 한도 소진, 추가 전송 없음':''}`:'대중교통 연결 꺼짐 · 전송 없음';$('#enableLive').disabled=liveOwner.enabled;$('#disconnectLive').disabled=!liveOwner.enabled;}
  renderCard();renderItinerary();renderLegStrip();renderCandidates();renderSchematic();renderLeafContent(fit);
 }
 function showBasemap(state){
@@ -168,7 +211,11 @@ $('#previous').onclick=()=>{const list=sequence(),index=list.findIndex(v=>sameSe
 $('#next').onclick=()=>{const list=sequence(),index=list.findIndex(v=>sameSelection(v,selection));if(index>=0&&index<list.length-1)select(list[index+1]);};
 $('#fit').onclick=()=>{if(!trip)return;if(leaf)fitLeaf();else renderSchematic();};
 $('#enableRoutes').onclick=()=>{if(!trip||!canQuery())return;try{storage().setItem(R.PREFERENCE_KEY,JSON.stringify({scope:R.scope(trip),enabled:true}));}catch(e){$('#memoryNotice').textContent='도보 연결 설정은 이번 화면에서만 유지됩니다.';}routeClient.enable();};
-window.addEventListener('pagehide',()=>routeClient.cancel());
+function disconnectLive(options){if(liveOwner)liveOwner.disconnect(options);else liveDisplay?.dispose();$('#liveAccess').value='';}
+$('#enableLive').onclick=()=>{if(!trip||!liveOwner?.configured)return;const input=$('#liveAccess');try{liveOwner.enable({token:input.value,budget:60});}catch(_){$('#liveProgress').textContent='연결 코드를 확인하세요. 전송하지 않았습니다.';}finally{input.value='';}};
+$('#disconnectLive').onclick=disconnectLive;
+window.addEventListener('pagehide',()=>{disconnectLive({notify:false});routeClient.cancel();activeLegs=[];routeLayer?.clearLayers();$('#selectedContent').replaceChildren();$('#schematic').innerHTML='';});
+window.addEventListener('pageshow',event=>{if(event.persisted&&trip)render(false);});
 $('#resetAdded').onclick=()=>{if(currentDay==='all')return;memory.add[currentDay]=[];persist();render(false);};
 $('#copySummary').onclick=async()=>{const text=C.copySummary(currentDay,mode,memory);try{await navigator.clipboard.writeText(text);$('#copyNotice').textContent=' 복사했습니다.';$('#copyFallback').hidden=true;}catch(e){$('#copyText').value=text;$('#copyFallback').hidden=false;$('#copyText').focus();$('#copyText').select();}};
 
@@ -176,7 +223,7 @@ function download(value,name){const blob=new Blob([JSON.stringify(value,null,2)]
 $('#exportMemory').onclick=()=>{if(trip)download({schema:'busan-local-memory-v1',key:trip.legacyMemoryKey,memory},'visit-memory.json');};
 $('#exportTrip').onclick=()=>{if(trip)download({...state,trip,memory},'private-trip-backup.json');};
 function activate(next,restorePreference=false){
- state=next;trip=state.trip;memory=state.memory;C=window.BusanCore.create(trip);basemap=basemap||C.createBasemapState();
+ disconnectLive({notify:false});activeLegs=[];state=next;trip=state.trip;memory=state.memory;C=window.BusanCore.create(trip);basemap=basemap||C.createBasemapState();
  let enabled=false;try{const pref=JSON.parse(storage().getItem(R.PREFERENCE_KEY)||'null');enabled=restorePreference&&canQuery()&&pref?.enabled===true&&pref.scope===R.scope(trip);}catch(e){}
  if(!restorePreference)try{storage().setItem(R.PREFERENCE_KEY,JSON.stringify({scope:R.scope(trip),enabled:false}));}catch(e){}
  routeClient.activate(C,state.routeCache,{enabled});
@@ -187,7 +234,7 @@ function activate(next,restorePreference=false){
  render();showBasemap(basemap.snapshot());if(!leaf)bootMap();
 }
 function buildModes(){const host=$('#modes');host.replaceChildren();const modes=Object.keys(trip.dayRoutes[currentDay==='all'?Object.keys(trip.dayRoutes)[0]:currentDay]);for(const m of modes){const b=button(trip.modeLabels[m]||m,()=>{mode=m;selection={type:'place',id:ids()[0]};render();});b.dataset.mode=m;host.append(b);}}
-async function importFile(event,kind){const file=event.target.files[0];if(!file)return;const version=++importEpoch;try{
+async function importFile(event,kind){const file=event.target.files[0];if(!file)return;const version=++importEpoch;disconnectLive({notify:false});if(trip)render(false);try{
  if(file.size>I.MAX_BYTES)throw Error('파일이 너무 큽니다. 최대 2MB입니다.');
  const text=await file.text();if(version!==importEpoch)return;const prepared=I.prepare(text,state,kind);
  if(prepared.replaces&&!window.confirm('현재 일정과 기록을 이 파일로 바꿀까요? 보관하려면 먼저 전체 내보내기를 해 주세요.'))return;
@@ -196,3 +243,4 @@ async function importFile(event,kind){const file=event.target.files[0];if(!file)
 $('#importTrip').onchange=e=>importFile(e,'trip');$('#importMemory').onchange=e=>importFile(e,'memory');
 try{const saved=I.load(storage());if(saved)activate(saved,true);}catch(e){$('#memoryNotice').textContent='저장 기록을 읽지 못했습니다. 기존 저장값은 지우지 않았습니다. '+e.message;}
 })();
+

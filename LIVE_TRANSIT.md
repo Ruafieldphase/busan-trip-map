@@ -1,0 +1,53 @@
+# Current-display transit: reviewed gateway connection
+
+This EMPTY viewer connects to exactly `https://busan-trip-transit.kuirvana.workers.dev/v1/transit`. The fixed endpoint and both runtime instances stay inside the app IIFE. The index allows only its exact HTTPS host and the existing foot-routing host in connect-src; other CSP restrictions are intact. All local asset query versions are0.8.1. Configuration alone never enables transit: EMPTY startup, trip activation, storage restore and cached-page return stay disabled with budget0 and zero transit requests.
+
+Dedicated gateway source SHA256 `2e93ccf48f23babb6dfae8880ea10ddf774babef60d5c134dea2d5b5de63bd2a` was deployed, with provider/caller credentials installed only as server Secrets. A real no-credential POST from the expected Origin returned401 with the exact CORS Origin and no-store. This proves the authentication boundary, not a positive provider route, browser CSP execution, usable rail/entrances or Android behavior. No credentials or real transit response data are bundled in the viewer.
+
+## Request ownership and activation
+
+`live-request.js` owns transport while `live-transit.js` owns parsing and current-display models. The app keeps both instances inside its IIFE, separate from trip/state, visit memory, source transport legs and FOSSGIS cache. Neither instance is exposed as an app console setter. There is no response-paste UI, response-file import, query/hash credential bootstrap, dynamic endpoint control or authentication bypass.
+
+The reviewed endpoint is canonical HTTPS at exactly `/v1/transit`, without query/hash/userinfo. The exact connection policy is `connect-src https://routing.openstreetmap.de https://busan-trip-transit.kuirvana.workers.dev`. No wildcard or extra host is allowed. The user must enter the separately provided private caller connection code in the existing password control, then explicitly press enable. The panel becomes visible after loading a trip; selected-card transit is available at every edge index while enabled. A code alone or enable without a valid nonempty code sends nothing. The viewer never asks for a Kakao REST key. Code input is cleared after the action and on disconnect/import/pagehide. Tokens are not stored or exported. Disposal releases references; physical memory erasure or immediate garbage collection is not claimed.
+
+The session starts disabled with budget0. User enable latches a budget from1 through60 (the app control explicitly selects60). Each attempted transmission consumes one unit, even if it fails or times out. Used budget never decreases: date/composition changes, imports, disconnect/reconnect and re-enabling do not replenish it; it cannot be increased after first activation. No automatic retry exists. Current failed/settled edges cannot be resubmitted by rendering, repeated selection or repeated enable. Exhaustion marks queued/newly eligible edges with an explicit existing-data fallback and makes no additional request. This in-memory screen-session budget is **not an account-global spending, quota or rate limit**; new app sessions/devices and independent callers need separate server/account controls. No reset or retry control was added.
+
+For each accepted request there is exactly one fetch, with POST JSON containing only numeric `start_x`, `start_y`, `end_x`, `end_y` from original pins. Headers are only JSON Content-Type and the Authorization bearer field; credentials are omitted, cache is no-store, redirect is error and referrer is omitted. Place names, dates, bookings, records, original JSON, user headers, extra request fields and upstream URLs are never sent. Timeout is fixed at15 seconds across headers/body. Content-Length and streamed decoded byte counts are bounded at2 MiB, UTF-8 is strict, and malformed/error bodies are rejected without displaying or logging them. No response cache/history, raw-body retention or alternative-route collection is created.
+
+## Current screen lifetime and intent
+
+Only currently displayed directed original-coordinate edges enter the queue. Identity includes both place IDs and both original coordinates, independent of row number, card selection or screen ratio. Reversed edges are independent. Endpoint kinds and approximate-pin flags also participate in invalidation. At most one transport is active; removal/context changes abort its AbortController and cancel its reader before subsequent work, while stale completions cannot acquire a current lifecycle token. Injected fakes that ignore abort are still rejected when they finish.
+
+New trip/activation/import, date/composition change and disconnect dispose old results and tokens. Import starts by disconnecting before asynchronous file reading, including failed/cancelled imports. Import, disconnect and pagehide release the private token; pagehide also clears live DOM/layer references. A cached-page return renders owned data with transit disabled. Date/composition changes can queue their newly displayed eligible edges only while the explicitly enabled connection remains active; the session budget is shared.
+
+Add/remove reconciles only changed/removed edges and preserves results and pending transport for unaffected displayed edges. Removed results cannot revive when an edge is later re-added. Each current edge settles once; parser rejection remains failure, not controller success. Render/onChange never synchronously starts another fetch, preventing recursive rendering and duplicate transmissions.
+
+Automatic eligibility uses source transit/unknown intent across **all** indices; it is not capped at the first1/2/3 edges. Source composites containing bus/subway/rail are eligible. Explicit/source walking and foot candidates stay on the foot path automatically; closures are not automatically reclassified. Once configured/enabled, every selected edge can instead receive an explicit transit request, including unknown/new foot candidates beyond index3. Visit compositions such as bus/walk/rest never become physical transport modes. A straight-distance ordering/candidate threshold does not create a bus route. Failures show that existing lines/guide remain owned fallback data; no car or invented road fallback is introduced.
+
+## Adapter and rail identity
+
+The supplied contract remains `status: OK`, `routes[].properties`, `routes[].steps[].properties` with type/guidance/distance/time and optional stops/vehicles, plus `steps[].path.points` in longitude/latitude order. Only route0 is selected by the transport owner. The pure adapter can explicitly select another route, but does not retain raw bodies/alternatives. One longitude/latitude conversion creates immutable renderer coordinates. Existing step/vertex/regional/direction guards remain; route properties are not retained and no total journey time is fabricated.
+
+`BUS` maps to bus, `SUBWAY` to subway, `WALKING` to walking. Access/exit/transfer walking and missing connectors/platform/entrance evidence remain explicit. Live results are always partial and field/road/operations unverified. They do not replace original pins or certify entrances. Response-derived models and decorated display legs have serialization guards and never enter storage/export callbacks. Source-owned objects remain unmodified.
+
+Optional `railRules` defaults to an empty array; **no real aliases are preinstalled**. Each supplied rule must name `providerMode: SUBWAY`, one exact `vehicle: {name,type}` and nonempty source/reference, valid observedAt and `verification: source-verified` evidence. Rules are copied/frozen and duplicate identities are rejected. Only a step with exactly one matching vehicle/service identity becomes rail. Other subway services or the same name with a different vehicle type remain subway. Evidence appears in the shared guide model; access/platform/direction gaps stay unverified. Synthetic mapping tests establish only scoping. All real rail naming requires fresh, authorized current Kakao identity verification.
+
+Map, schematic and selected guide consume the same accepted model and coordinate objects. Foot rendering runs between live overlays so asynchronous foot results cannot replace accepted transit or erase transit fallback notices. Live parsing never calls the FOSSGIS cache writer. Independently owned trip data, original geometry and existing caches retain their prior ownership.
+
+## Offline checks and remaining gaps
+
+Affected synthetic tests passed36/36, exit0:
+
+```powershell
+node --test --test-reporter=tap candidate/tests/live-request.test.js candidate/tests/live-transit.test.js
+```
+
+Coverage retains all indices, sequential exact-payload requests, strict configuration, unchanged-edge retention, changed/date/import/pagehide abort with late results, directed/coordinate identity, duplicate suppression, parser rejection/failure isolation,60-budget exhaustion without replenishment, timeout/stream-size/UTF-8 guards, scoped rail identities, fake-DOM map/guide agreement, late foot completion and export/storage/log exclusion. The shipping-configuration test executes the production constant unchanged with fake fetch: EMPTY startup, activation, actual synthetic local-storage restore, disabled card actions, code-only entry, missing-code enable and cached-page return produce zero requests. Missing endpoint behavior uses an injected null. Enabled transport tests replace only the exact endpoint constant in memory with a synthetic endpoint; no test seam ships in app.js.
+
+The final combined offline run passed123/123, exit0. It retains the public baseline reproduction tests and verifies that only the specifically authorized gateway host is added to the original CSP/host set; all other directives remain exact. The exact full CSP and coherent versions are also asserted in live-request.test.js:
+
+```powershell
+node --test --test-reporter=dot candidate/tests/*.test.js gateway/test/*.test.mjs
+```
+
+These Node DOM/Leaflet doubles are not browser/visual/device validation. Remaining checks include positive gateway/upstream/auth/CORS/CSP behavior, current road and transport alignment, boarding/direction/access/transfer/rail identity and entrances, browser visual controls and physical Android use. No real rail aliases are installed. Foot candidates and source-owned walking remain automatically excluded from transit; every selected-card edge supports an explicit request. Source data and a rendered line alone do not establish a usable journey or complete route verification.

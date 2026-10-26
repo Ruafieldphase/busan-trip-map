@@ -99,7 +99,7 @@ function create(options={}){
  function view(legs){
   base=legs;const next=new Map();
   const out=legs.map(leg=>{
-   if(leg.coords)return leg;const s=spec(leg),entry=entries.get(s.key),chosen=choices.has(s.key)||(entry&&entry.explicit),eligible=autoWalk(leg)||(chosen&&explicitWalk(core,leg));
+   if(leg.coords||leg.type==='composite')return leg;const s=spec(leg),entry=entries.get(s.key),chosen=choices.has(s.key)||(entry&&entry.explicit),eligible=autoWalk(leg)||(chosen&&explicitWalk(core,leg));
    if(!eligible)return leg;
    if(entry)return asLeg(leg,entry);
    if((enabled&&autoWalk(leg))||chosen){s.explicit=!!chosen;next.set(s.key,s);if(!statuses.has(s.key))statuses.set(s.key,{state:'pending',message:'보행 경로 대기 중'});}
@@ -118,3 +118,4 @@ function create(options={}){
 }
 return {PROVIDER,PROFILE,ENDPOINT,SCHEMA,PREFERENCE_KEY,scope,key,meters,parseResponse,validateCache,autoWalk,explicitWalk,create};
 });
+

@@ -1,5 +1,5 @@
 /* Local JSON boundary. No network, evaluation, or legacy-key writes. */
-(function(root,factory){const api=factory(typeof module==='object'&&module.exports?require('./routing.js'):root.TripRouting);if(typeof module==='object'&&module.exports)module.exports=api;else root.TripIO=api;})(globalThis,function(R){
+(function(root,factory){const local=typeof module==='object'&&module.exports;const api=factory(local?require('./routing.js'):root.TripRouting,local?require('./composite.js'):root.TripComposite);if(local)module.exports=api;else root.TripIO=api;})(globalThis,function(R,T){
 'use strict';
 const MAX_BYTES=2*1024*1024,KEY='local-trip-shell-v05';
 const own=(o,k)=>Object.hasOwn(o,k),object=o=>o&&typeof o==='object'&&!Array.isArray(o);
@@ -22,6 +22,7 @@ function validateTrip(t){
  let vertices=0;
  for(const p of list(t.presets,100)){refs(p.ids,2);list(p.legs,499);need(p.legs.length===p.ids.length-1,'저장 구간 수를 확인하세요.');for(const leg of p.legs)need(Array.isArray(leg)&&leg.length===2&&leg.every(x=>Number.isFinite(x)&&x>=0&&x<=10000000),'저장 거리·시간을 확인하세요.');list(p.shape,20000);need(p.shape.length>=2,'저장 선형이 비어 있습니다.');vertices+=p.shape.length;need(vertices<=20000,'저장 좌표가 너무 많습니다.');p.shape.forEach(point);}
  for(const r of list(t.legRules,2000)){need(ids.has(r.a)&&ids.has(r.b),'구간 장소 ID를 확인하세요.');if(r.day)need(own(t.dayRoutes,r.day),'구간 날짜를 확인하세요.');if(r.mode)need(own(t.modeLabels,r.mode),'구간 구성을 확인하세요.');const l=r.leg;need(object(l)&&l.a===r.a&&l.b===r.b&&l.coords===null&&l.distance===null&&l.duration===null,'미확인 이동 구간에 확정 좌표·시간을 넣을 수 없습니다.');for(const k of ['type','mode','source','queriedAt','desc'])str(l[k]);}
+ if(own(t,'transportLegs'))T.validate(t.transportLegs,t);
  return t;
 }
 function validateMemory(m){need(object(m)&&Array.isArray(m.visited)&&object(m.add),'방문·추가 기록 형식이 아닙니다.');list(m.visited,5000).forEach(id);need(Object.keys(m.add).length<=100,'추가 기록 날짜가 너무 많습니다.');for(const [d,a] of Object.entries(m.add)){id(d);list(a,5000).forEach(id);}return m;}
@@ -48,3 +49,4 @@ function commit(storage,state){const text=JSON.stringify(state);validateState(pa
 function load(storage){const raw=storage.getItem(KEY);return raw===null?null:validateState(parse(raw));}
 return {KEY,MAX_BYTES,prepare,commit,load,validateTrip,validateState,validateMemory};
 });
+
