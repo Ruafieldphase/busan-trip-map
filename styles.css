@@ -18,3 +18,8 @@
 
 .transportSteps,.transportIssues{padding-left:23px;margin:9px 0;overflow-wrap:anywhere}.transportSteps li{border-left:3px solid var(--line);padding-left:9px;margin-bottom:12px}.transportSteps strong{font-size:12px}.transportIssues{color:var(--amber)}.legStrip .composite{border-color:#91bcff}.selectedCard li{font-size:12px}.transportSteps p{white-space:normal}
 
+
+/* Wrapped labels share flow, so their heights cannot collide. */
+.mapSummaryStack{position:absolute;left:10px;right:56px;bottom:32px;z-index:650;display:grid;grid-template-columns:minmax(0,1fr);gap:5px;pointer-events:none}
+.mapSummaryStack .sequenceLegend{position:static;max-width:100%;margin:0}
+.mapSummaryStack .mapTools{position:static;max-width:100%;align-items:flex-start}

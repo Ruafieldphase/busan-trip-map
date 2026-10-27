@@ -1,6 +1,6 @@
 # Current-display transit: reviewed gateway connection
 
-This EMPTY viewer connects to exactly `https://busan-trip-transit.kuirvana.workers.dev/v1/transit`. The fixed endpoint and both runtime instances stay inside the app IIFE. The index allows only its exact HTTPS host and the existing foot-routing host in connect-src; other CSP restrictions are intact. All local asset query versions are0.8.1. Configuration alone never enables transit: EMPTY startup, trip activation, storage restore and cached-page return stay disabled with budget0 and zero transit requests.
+This EMPTY viewer connects to exactly `https://busan-trip-transit.kuirvana.workers.dev/v1/transit`. The fixed endpoint and both runtime instances stay inside the app IIFE. The index allows only its exact HTTPS host and the existing foot-routing host in connect-src; other CSP restrictions are intact. All local asset query versions are0.8.2. Configuration alone never enables transit: EMPTY startup, trip activation, storage restore and cached-page return stay disabled with budget0 and zero transit requests.
 
 Dedicated gateway source SHA256 `2e93ccf48f23babb6dfae8880ea10ddf774babef60d5c134dea2d5b5de63bd2a` was deployed, with provider/caller credentials installed only as server Secrets. A real no-credential POST from the expected Origin returned401 with the exact CORS Origin and no-store. This proves the authentication boundary, not a positive provider route, browser CSP execution, usable rail/entrances or Android behavior. No credentials or real transit response data are bundled in the viewer.
 
