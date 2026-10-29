@@ -6,6 +6,8 @@
 'use strict';
 const TIMEOUT_MS=15000,MAX_BODY_BYTES=2*1024*1024,MAX_BUDGET=60;
 const need=ok=>{if(!ok)throw Error('LIVE_REQUEST_INVALID');};
+// Header-safe caller format; preserve the exact supplied value for server comparison.
+function validToken(value){return typeof value==='string'&&value.length>=32&&value.length<=512&&!/[^\x21-\x7e]/.test(value);}
 function endpoint(value){
  if(value==null)return null;
  need(typeof value==='string'&&!/[?#]/.test(value));const u=new URL(value);
@@ -105,7 +107,7 @@ function create(options={}){
  }
  function enable(input){
   if(!url)return false;
-  need(input&&typeof input.token==='string'&&/^[A-Za-z0-9._~-]{16,512}$/.test(input.token));
+  need(input&&validToken(input.token));
   need(Number.isInteger(input.budget)&&input.budget>=1&&input.budget<=MAX_BUDGET);
   // Disconnect, import, date changes and re-enabling never replenish this budget.
   need(limit===0||input.budget===limit);if(!limit)limit=input.budget;
@@ -122,5 +124,5 @@ function create(options={}){
   get configured(){return url!==null;},get enabled(){return enabled;},
   get budget(){return Object.freeze({limit,used,remaining:enabled?Math.max(0,limit-used):0});},toJSON:()=>undefined});
 }
-return Object.freeze({create,eligible,TIMEOUT_MS,MAX_BODY_BYTES,MAX_BUDGET});
+return Object.freeze({create,eligible,validToken,TIMEOUT_MS,MAX_BODY_BYTES,MAX_BUDGET});
 });

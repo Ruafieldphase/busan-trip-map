@@ -212,7 +212,23 @@ $('#next').onclick=()=>{const list=sequence(),index=list.findIndex(v=>sameSelect
 $('#fit').onclick=()=>{if(!trip)return;if(leaf)fitLeaf();else renderSchematic();};
 $('#enableRoutes').onclick=()=>{if(!trip||!canQuery())return;try{storage().setItem(R.PREFERENCE_KEY,JSON.stringify({scope:R.scope(trip),enabled:true}));}catch(e){$('#memoryNotice').textContent='도보 연결 설정은 이번 화면에서만 유지됩니다.';}routeClient.enable();};
 function disconnectLive(options){if(liveOwner)liveOwner.disconnect(options);else liveDisplay?.dispose();$('#liveAccess').value='';}
-$('#enableLive').onclick=()=>{if(!trip||!liveOwner?.configured)return;const input=$('#liveAccess');try{liveOwner.enable({token:input.value,budget:60});}catch(_){$('#liveProgress').textContent='연결 코드를 확인하세요. 전송하지 않았습니다.';}finally{input.value='';}};
+$('#enableLive').onclick=()=>{
+ if(!trip||!liveOwner?.configured)return;const input=$('#liveAccess');
+ const focusInput=()=>{try{input.focus?.();}catch(_){}};
+ if(!window.TripLiveRequest.validToken(input.value)){
+  $('#liveProgress').textContent='연결 코드는 공백 없는 ASCII 영문·숫자·기호 32~512자로 입력하세요. 입력값은 유지됩니다.';
+  focusInput();return;
+ }
+ try{
+  if(liveOwner.enable({token:input.value,budget:60})!==true||!liveOwner.enabled)throw Error('LIVE_SETUP_FAILED');
+  input.value='';
+ }catch(_){
+  // Keep the input; disconnectLive also clears it and is only for explicit disposal.
+  try{liveOwner.disconnect({notify:false});render(false);}catch(_){}
+  $('#liveProgress').textContent='대중교통 연결 설정 오류입니다. 입력을 유지했습니다. 자동으로 다시 시도하지 않습니다.';
+  focusInput();
+ }
+};
 $('#disconnectLive').onclick=disconnectLive;
 window.addEventListener('pagehide',()=>{disconnectLive({notify:false});routeClient.cancel();activeLegs=[];routeLayer?.clearLayers();$('#selectedContent').replaceChildren();$('#schematic').innerHTML='';});
 window.addEventListener('pageshow',event=>{if(event.persisted&&trip)render(false);});
