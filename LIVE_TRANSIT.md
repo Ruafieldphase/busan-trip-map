@@ -51,3 +51,10 @@ node --test --test-reporter=dot candidate/tests/*.test.js gateway/test/*.test.mj
 ```
 
 These Node DOM/Leaflet doubles are not browser/visual/device validation. Remaining checks include positive gateway/upstream/auth/CORS/CSP behavior, current road and transport alignment, boarding/direction/access/transfer/rail identity and entrances, browser visual controls and physical Android use. No real rail aliases are installed. Foot candidates and source-owned walking remain automatically excluded from transit; every selected-card edge supports an explicit request. Source data and a rendered line alone do not establish a usable journey or complete route verification.
+
+
+## v0.8.4 fixed failure diagnostics
+
+The current viewer uses asset version0.8.4. Accessible HTTP401/403/503/502, other HTTP failures, inaccessible/network responses, timeout, invalid body and unsupported provider structure have separate fixed Korean notices. Status0 does not prove CORS, authentication or a provider cause. No raw exception, body, URL, coordinate, credential/header value or provider detail enters diagnostics or persistence. A failure keeps existing data explicitly labeled and does not enable an automatic retry. Pending and disconnected status retains used session requests. Error and late-cancelled bodies are discarded without retaining the payload.
+
+Final combined offline viewer/gateway checks passed209/209 (exit0), using verified baseline fixtures and injected synthetic transports with default external fetch blocked. This supersedes older synthetic counts above; it does not prove current transit geometry, boarding/direction/transfer/entrance correctness or Android use.

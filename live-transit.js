@@ -4,6 +4,20 @@
 const MAX_STEPS=200,MAX_VERTICES=50000,MAX_STEP_VERTICES=20000;
 const labels={walk:'도보',bus:'버스',subway:'지하철',rail:'철도',transfer:'환승 이동'};
 const colors={walk:'#269666',bus:'#519be5',subway:'#ba8bed',rail:'#ba8bed',transfer:'#e7be69'};
+// Fixed diagnostics only. Never accept an exception/body/header as UI text.
+const failureMessages=Object.freeze({
+ authentication:'인증 확인 필요 (HTTP 401) · 연결 코드를 확인하세요',
+ authorization:'접근 권한 확인 필요 (HTTP 403) · 연결 허용 설정을 확인하세요',
+ service_unavailable:'서비스 설정 또는 가용성 확인 필요 (HTTP 503)',
+ upstream_gateway:'게이트웨이가 상위 경로 응답을 받지 못했습니다 (HTTP 502)',
+ http_failure:'서버가 HTTP 오류를 반환했습니다',
+ network_unconfirmed:'읽을 수 있는 응답 없음 · 네트워크·브라우저 정책·서버 상태 중 원인은 미확인입니다',
+ timeout:'요청 제한 시간 초과',
+ invalid_body:'응답 본문 형식 또는 크기를 확인할 수 없습니다',
+ unsupported_response:'지원하지 않거나 유효하지 않은 경로 응답 구조입니다',
+ unclassified:'실패 원인 미확인'
+});
+const failureReason=v=>typeof v==='string'&&Object.hasOwn(failureMessages,v)?v:'unclassified';
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const need=ok=>{if(!ok)throw Error('LIVE_TRANSIT_INVALID');};
 const point=p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite)&&Math.abs(p[0])<=90&&Math.abs(p[1])<=180;
@@ -112,21 +126,21 @@ function create({onChange=()=>{}}={}){
   edges=current;
  }
  // Notice updates are batched by the request owner's render reconciliation.
- function notice(input,status){const k=key(edge(input));need(['queued','exhausted','unavailable'].includes(status));if(!edges.has(k)||models.has(k)||pending.has(k))return false;notices.set(k,status);return true;}
+ function notice(input,status){const k=key(edge(input));need(['queued','exhausted','unavailable'].includes(status));if(!edges.has(k)||models.has(k)||pending.has(k))return false;notices.set(k,{status});return true;}
  function begin(input){const k=key(edge(input));if(!edges.has(k))return null;const token=Object.freeze({});pending.set(k,token);models.delete(k);notices.delete(k);onChange();return token;}
  function locate(token){if(!token)return null;for(const [k,t] of pending)if(t===token)return k;return null;}
  function accept(token,body,options){
   const k=locate(token);if(k===null)return false;pending.delete(k);
-  try{models.set(k,parseResponse(body,edges.get(k),options));}catch(_){models.delete(k);notices.set(k,'failed');onChange();return false;}
+  try{models.set(k,parseResponse(body,edges.get(k),options));}catch(_){models.delete(k);notices.set(k,{status:'failed',reason:'unsupported_response'});onChange();return false;}
   onChange();return true;
  }
- function fail(token){const k=locate(token);if(k===null)return false;pending.delete(k);models.delete(k);notices.set(k,'failed');onChange();return true;}
+ function fail(token,reason){const k=locate(token);if(k===null)return false;pending.delete(k);models.delete(k);notices.set(k,{status:'failed',reason:failureReason(reason)});onChange();return true;}
  function view(legs,specs){
   need(Array.isArray(legs)&&Array.isArray(specs)&&legs.length===specs.length);
   return legs.map((l,i)=>{const s=edge(specs[i]);need(l.a===s.a&&l.b===s.b);const k=key(s),model=models.get(k);if(model)return l.liveTransit&&l.transportModel===model?l:asLeg(l,model);
-   const status=pending.has(k)?'pending':notices.get(k);if(!status)return l;
+   const notice=notices.get(k),status=pending.has(k)?'pending':notice?.status;if(!status)return l;
    const messages={failed:'실시간 경로 확인 실패',pending:'실시간 경로를 불러오는 중',queued:'실시간 경로 조회 대기',exhausted:'이번 화면 세션의 요청 한도 소진 · 추가 전송 없음',unavailable:'실시간 연결을 사용할 수 없음 · 전송 없음'};
-   const display={...l,liveTransitRequestState:status,liveTransitMessage:messages[status]+' · 현재 선과 안내는 기존 자료입니다.'};
+   const display={...l,liveTransitRequestState:status,liveTransitMessage:messages[status]+(status==='failed'?' · '+failureMessages[failureReason(notice?.reason)]+' · 이 구간 자동 재시도 없음':'')+' · 현재 선과 안내는 기존 자료입니다.',...(status==='failed'?{liveTransitFailureReason:failureReason(notice?.reason)}:{})};
    Object.defineProperty(display,'toJSON',{value:()=>undefined});return Object.freeze(display);
   });
  }

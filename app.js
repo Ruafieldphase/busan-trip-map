@@ -157,7 +157,7 @@ function render(fit=true){
  $('#routeProgress').textContent=summary;
  $('#enableRoutes').disabled=routeClient.enabled||!canQuery();$('#enableRoutes').textContent=routeClient.enabled?'도보 경로 연결 켜짐':'빠진 도보 경로 연결';
  $('#liveConnection').hidden=!liveOwner?.configured;
- if(liveOwner?.configured){const b=liveOwner.budget;$('#liveProgress').textContent=liveOwner.enabled?`현재 화면의 대중교통 연결 켜짐 · 세션 요청 ${b.used}/${b.limit}${b.remaining===0?' · 한도 소진, 추가 전송 없음':''}`:'대중교통 연결 꺼짐 · 전송 없음';$('#enableLive').disabled=liveOwner.enabled;$('#disconnectLive').disabled=!liveOwner.enabled;}
+ if(liveOwner?.configured){const b=liveOwner.budget;$('#liveProgress').textContent=liveOwner.enabled?`현재 화면의 대중교통 연결 켜짐 · 세션 요청 ${b.used}/${b.limit}${b.remaining===0?' · 한도 소진, 추가 전송 없음':''}`:`대중교통 연결 꺼짐 · ${b.used?'세션 요청 '+b.used+'/'+b.limit+' · 추가 전송 없음':'전송 없음'}`;$('#enableLive').disabled=liveOwner.enabled;$('#disconnectLive').disabled=!liveOwner.enabled;}
  renderCard();renderItinerary();renderLegStrip();renderCandidates();renderSchematic();renderLeafContent(fit);
 }
 function showBasemap(state){
