@@ -60,18 +60,36 @@ function renderCard(){
   if(leg.liveTransitMessage)host.append(node('p',leg.liveTransitMessage,leg.liveTransitRequestState==='pending'?'routePending':'pinWarning'));
   if(leg.transportModel){
    const m=leg.transportModel,steps=node('ol',null,'transportSteps');
-   for(const s of m.steps){const item=node('li');item.dataset.step=s.id;item.append(node('strong',s.instruction),node('p',s.measure),node('p',s.evidenceText,'source'),node('p','선형: '+s.geometryEvidence,'source'));
-    if(s.serviceEvidence)item.append(node('p','노선·방향·승하차: '+s.serviceEvidence,'source'));
-    item.append(node('p','출발 끝점: '+window.TripComposite.evidenceText(s.from.evidence)+' / 도착 끝점: '+window.TripComposite.evidenceText(s.to.evidence),'source'));
+   for(const s of m.steps){
+    const item=node('li');item.dataset.step=s.id;item.append(node('strong',s.instruction),node('p',s.measure));
+    const detail=m.live?node('details'):item;if(m.live){detail.open=false;detail.append(node('summary','좌표·출처 자세히'));item.append(detail);}
+    detail.append(node('p',s.evidenceText,'source'),node('p','선형: '+s.geometryEvidence,'source'));
+    if(m.live)detail.append(node('p','좌표 선분 길이 '+s.sourcePolylineLengthMeters.toFixed(1)+'m · 제공 거리 '+s.providerDistanceMeters.toFixed(1)+'m · 제공 거리−선분 길이 '+s.providerMinusPolylineMeters.toFixed(1)+'m · 수치 비교이며 도로 정합 근거가 아닙니다','source'));
+    if(s.serviceEvidence)detail.append(node('p','노선·방향·승하차: '+s.serviceEvidence,'source'));
+    detail.append(node('p','출발 끝점: '+window.TripComposite.evidenceText(s.from.evidence)+' / 도착 끝점: '+window.TripComposite.evidenceText(s.to.evidence),'source'));
+    if(m.live&&s.refinement){
+     const record=m.refinements.find(r=>r.originalStepId===s.refinement.originalStepId);
+     item.append(node('p',record.message,'source'));detail.append(node('p','재확인 전 출처: '+record.originalEvidenceText,'source'));
+    }else if(m.live&&s.providerMode==='WALKING'&&liveOwner?.refinementPlan){
+     const spec=liveSpecs([leg])[0],plan=liveOwner.refinementPlan(spec,m,s.id),recheck=button('이 도보 1회 재확인',()=>liveOwner.requestRefinement(spec,m,s.id));
+     recheck.disabled=!plan.count;item.append(recheck,node('p',plan.text,'source'));
+    }
     steps.append(item);
    }
    host.append(steps,node('p',m.live?'현재 응답을 표시합니다. 실제 도로 정합·현장 통제·운영·출입구 검증은 별도입니다.':m.status==='documented'?'각 단계에 원본 근거가 있습니다. 가져온 확인 주장을 표시하며 현재 제공자 확인·현장 통제·운영 검증은 별도입니다.':'일부 구간만 있습니다. 연결 도보·환승·진입점 또는 개별 근거를 확인해야 합니다.','pinWarning'));
-   if(m.issues.length){const missing=node('ul',null,'transportIssues');for(const message of m.issues)missing.append(node('li',message));host.append(missing);}
+   if(m.live&&m.gaps.length){
+    host.append(node('p',`응답 끝점 사이 간격 ${m.gaps.length}개 · 개수는 누락 도로 수를 뜻하지 않습니다. 각 간격의 실제 접근은 미확인입니다.`,'source'));
+    const review=node('details');review.open=false;review.append(node('summary','남은 간격의 종류·거리 보기'));
+    const boundaries=node('ul',null,'transportIssues');
+    for(const g of m.gaps){const item=node('li',`${({'pin-to-step':'출발 핀→단계','step-to-step':'단계→단계','step-to-pin':'단계→도착 핀'})[g.sourceKind]} · ${g.distanceMeters.toFixed(1)}m · 실제 접근 미확인`);item.dataset.boundary=g.id;boundaries.append(item);}
+    review.append(boundaries);host.append(review);
+   }
+   if(m.issues.length){const missing=node('ul',null,'transportIssues');for(const message of m.issues)missing.append(node('li',message));if(m.live){const review=node('details');review.open=false;review.append(node('summary','미확인 근거 자세히'),missing);host.append(review);}else host.append(missing);}
    host.append(node('p',(m.live?'파랑: 버스 · 보라: 지하철 또는 식별 근거가 있는 철도 · 초록: 도보 · 금색: 환승. 실선은 현재 응답 선형이며 도로 정합 확인을 뜻하지 않습니다. 회색 점선은 연결 미확인 간격입니다.':'파랑: 버스 · 보라: 지하철·철도 · 초록: 도보 · 금색: 환승. 해당 단계의 원본 근거가 없으면 점선으로 표시합니다. 회색 점선은 실제 경로가 없는 연결 간격입니다.'),'source'));
   }else if(!leg.coords)host.append(node('p','지도 점선은 두 번호의 이동 순서입니다. 실제 도로·버스 노선이 확인된 선은 아닙니다.','pinWarning'));
   const actions=node('div',null,'actions');
   if(liveOwner?.configured){const query=button('이 구간 대중교통 확인',()=>liveOwner.request(liveSpecs([leg])[0]));query.disabled=!liveOwner.enabled||!!leg.liveTransit||['queued','pending','failed','exhausted'].includes(leg.liveTransitRequestState);actions.append(query);}
-  if(leg.liveTransit&&liveOwner?.walkPlan){const spec=liveSpecs([leg])[0],plan=liveOwner.walkPlan(spec),join=button('접근·이탈·환승 도보 연결 ('+plan.count+'회)',()=>liveOwner.requestWalk(spec));join.disabled=!plan.count;actions.append(join);host.append(node('p',plan.text,'pinWarning'));}
+  if(leg.liveTransit&&liveOwner?.walkPlan){const spec=liveSpecs([leg])[0],plan=liveOwner.walkPlan(spec),join=button('접근·이탈·환승 도보 연결 ('+plan.count+'회)',()=>liveOwner.requestWalk(spec));join.disabled=!plan.count;actions.append(join);host.append(node('p','도보 연결 응답 '+plan.accepted+' · 실패 '+plan.failed+' · 재시도 없음 · 실제 접근 미확인','source'));const review=node('details');review.open=false;review.append(node('summary','도보 연결 조회 상태 자세히'),node('p',plan.text,'pinWarning'));host.append(review);}
    const walk=C.directionLink(leg,'walk'),traffic=C.directionLink(leg,'traffic');
   if(walk.url===traffic.url){actions.append(link(walk.label,walk.url),link('출발 장소 검색 ↗',C.kakaoSearch(C.lookup[leg.a])));}else{actions.append(link(walk.label,walk.url),link(traffic.label,traffic.url));}
   if(leg.routeOrigin==='calculated'||!C.highConfidence(C.lookup[leg.a])||!C.highConfidence(C.lookup[leg.b]))host.append(node('p','개략 핀 기준, 출발·도착 확인','pinWarning'));

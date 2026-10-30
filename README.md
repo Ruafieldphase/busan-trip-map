@@ -86,3 +86,8 @@ Walk responses must have the bounded Kakao status:OK route/legs/steps shape, per
 Date/composition/import/disconnect and directed-edge removal discard connectors with existing ownership and ignore late replies. Unchanged current edges keep results. Date/composition changes keep the explicitly enabled same-page connection; import/disconnect/pagehide releases the caller. **Tab visibility alone does not disconnect.** Full reload cannot restore the caller or live responses. No live walking data enters state, localStorage, history, foot-cache callbacks or exports; all model branches have JSON guards. Original pins, trip, reservations and existing independently owned FOSSGIS foot caches stay separate. Reference release is not physical memory erasure.
 
 The v0.8.6 viewer and reviewed gateway passed361/361 offline synthetic checks. Walking connectors require the explicit selected-card action and the existing private connection. Actual road alignment, building entrances, boarding side/direction, current operations and Android use remain separate verification gates; offline checks are not evidence of those results.
+
+
+## v0.8.7 — explicit walking-step recheck
+
+Gap insertion and walking-step replacement are separate manual actions. The selected live walking step can be rechecked once on the existing `/v1/walk` endpoint; unrelated rides, source pins and owned data are retained. Supplied vertex counts and residual boundary distances are diagnostics, not road or entrance verification. Identical responses do not claim improvement. No provider payload, token or runtime geometry is persisted/exported. Actual road, entrance, operation and Android checks remain open; this release does not declare complete route recovery.
