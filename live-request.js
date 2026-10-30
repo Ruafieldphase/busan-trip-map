@@ -33,8 +33,10 @@ function endpoint(value){
 function eligible(leg){
  if(/통제|폐쇄|closed|closure/i.test(leg.mode+' '+leg.desc))return false;
  if(leg.transportModel)return leg.transportModel.steps.some(s=>['bus','subway','rail'].includes(s.mode));
+ // Explicit transit intent must not be lost behind a legacy type or stored line.
+ if(['bus','subway','rail','transit'].includes(leg.type))return true;
  if(leg.coords||['walk','walk-candidate'].includes(leg.type))return false;
- return ['transit','unknown','transfer'].includes(leg.type);
+ return ['unknown','transfer'].includes(leg.type);
 }
 function create(options={}){
  const display=options.display;need(display&&typeof display.reconcile==='function');

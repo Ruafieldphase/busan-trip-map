@@ -58,3 +58,8 @@ These Node DOM/Leaflet doubles are not browser/visual/device validation. Remaini
 The current viewer uses asset version0.8.4. Accessible HTTP401/403/503/502, other HTTP failures, inaccessible/network responses, timeout, invalid body and unsupported provider structure have separate fixed Korean notices. Status0 does not prove CORS, authentication or a provider cause. No raw exception, body, URL, coordinate, credential/header value or provider detail enters diagnostics or persistence. A failure keeps existing data explicitly labeled and does not enable an automatic retry. Pending and disconnected status retains used session requests. Error and late-cancelled bodies are discarded without retaining the payload.
 
 Final combined offline viewer/gateway checks passed209/209 (exit0), using verified baseline fixtures and injected synthetic transports with default external fetch blocked. This supersedes older synthetic counts above; it does not prove current transit geometry, boarding/direction/transfer/entrance correctness or Android use.
+
+
+## v0.8.5 explicit legacy modes
+
+Automatic eligibility includes source types `bus`, `subway`, `rail` and `transit` before the stored-line exclusion, across every numbered index. Unknown/transfer eligibility and source walking/closure exclusions retain their prior scope. Pure legacy bus legs without composite steps no longer silently remain unqueried. No operator-only injection or private data is installed. Final combined viewer and reviewed gateway compatibility checks passed293/293 with synthetic transports. No automatic retry or budget replenishment was added.
