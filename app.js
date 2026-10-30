@@ -71,7 +71,8 @@ function renderCard(){
   }else if(!leg.coords)host.append(node('p','지도 점선은 두 번호의 이동 순서입니다. 실제 도로·버스 노선이 확인된 선은 아닙니다.','pinWarning'));
   const actions=node('div',null,'actions');
   if(liveOwner?.configured){const query=button('이 구간 대중교통 확인',()=>liveOwner.request(liveSpecs([leg])[0]));query.disabled=!liveOwner.enabled||!!leg.liveTransit||['queued','pending','failed','exhausted'].includes(leg.liveTransitRequestState);actions.append(query);}
-  const walk=C.directionLink(leg,'walk'),traffic=C.directionLink(leg,'traffic');
+  if(leg.liveTransit&&liveOwner?.walkPlan){const spec=liveSpecs([leg])[0],plan=liveOwner.walkPlan(spec),join=button('접근·이탈·환승 도보 연결 ('+plan.count+'회)',()=>liveOwner.requestWalk(spec));join.disabled=!plan.count;actions.append(join);host.append(node('p',plan.text,'pinWarning'));}
+   const walk=C.directionLink(leg,'walk'),traffic=C.directionLink(leg,'traffic');
   if(walk.url===traffic.url){actions.append(link(walk.label,walk.url),link('출발 장소 검색 ↗',C.kakaoSearch(C.lookup[leg.a])));}else{actions.append(link(walk.label,walk.url),link(traffic.label,traffic.url));}
   if(leg.routeOrigin==='calculated'||!C.highConfidence(C.lookup[leg.a])||!C.highConfidence(C.lookup[leg.b]))host.append(node('p','개략 핀 기준, 출발·도착 확인','pinWarning'));
   if(leg.routeSnap?.some(n=>n>100))host.append(node('p',`핀과 보행로 연결점 차이: 출발 ${Math.round(leg.routeSnap[0])}m · 도착 ${Math.round(leg.routeSnap[1])}m. 경로 끝의 실제 접근 지점을 확인하세요.`,'pinWarning'));

@@ -90,8 +90,9 @@ function parseResponse(body,input,{routeIndex=0,observedAt,railRules=[]}={}){
   const from=endpoint(s.coords[0],s.stops[0]?.name||'제공 경로 시작점',kind),to=endpoint(s.coords.at(-1),s.stops.at(-1)?.name||'제공 경로 끝점',kind);
   const service=s.vehicles.map(v=>v.name).filter(Boolean).join(', ');
   const instruction=labels[s.mode]+(service?' '+service:'')+' · '+(s.guidance||'상세 안내 없음')+(s.stops.length?' · '+s.stops.map(v=>v.name).join(' → '):'');
-  return {...s,number:i+1,from,to,color:colors[s.mode],geometryBacked:true,instruction,measure:`${(s.distance/1000).toFixed(2)}km · 제공자 약 ${Math.round(s.duration/60)}분`,issues:[],evidenceText:'Kakao 현재 응답 / '+observedAt+' / 현장 미검증',geometryEvidence:'Kakao 현재 응답 선형 · 도로 정합 미검증',serviceEvidence:transit?'현재 응답의 정류장·차량 표기 · 승강장·행선지 현장 미검증'+(rail?' / 철도 식별 근거: '+rail.evidence.source+' / '+rail.evidence.reference+' / '+rail.evidence.observedAt:''):null};
+  return {...s,number:i+1,from,to,color:colors[s.mode],geometryBacked:true,endpointOnly:s.coords.length===2,instruction,measure:`${(s.distance/1000).toFixed(2)}km · 제공자 약 ${Math.round(s.duration/60)}분`,issues:[],evidenceText:'Kakao 현재 응답 / '+observedAt+' / 현장 미검증',geometryEvidence:s.coords.length===2?'Kakao 현재 응답 좌표 2개 · 상세 경로·도로 정합 미확인':'Kakao 현재 응답 선형 · 도로 정합 미검증',serviceEvidence:transit?'현재 응답의 정류장·차량 표기 · 승강장·행선지 현장 미검증'+(rail?' / 철도 식별 근거: '+rail.evidence.source+' / '+rail.evidence.reference+' / '+rail.evidence.observedAt:''):null};
  });
+ for(const s of steps)if(s.endpointOnly)issues.push(`${s.number}단계: 공급원 좌표 2개 · 두 점만으로 실제 경로 확인 불가`);
  // Exact stop/platform destinations require no invented zero-length walking.
  // An ordinary pin at the same coordinate still is not an entrance proof.
  const checkEnd=(pin,path,kind,step,side)=>{
@@ -106,8 +107,66 @@ function parseResponse(body,input,{routeIndex=0,observedAt,railRules=[]}={}){
   const a=steps[i-1],b=steps[i];if(meters(a.coords.at(-1),b.coords[0])>.5)gap(a.coords.at(-1),b.coords[0],`${i}→${i+1}단계: 연결 경로 없음 · 환승·접근 미확인`);
   if(isTransit(a)&&isTransit(b))issues.push(`${i}→${i+1}단계: 명시적 환승 이동 없음`);
  }
- return ephemeral({live:true,status:'partial',steps,gaps,issues,sourceText:'Kakao 현재 응답 · 화면에서만 표시',observedAt});
+ return ephemeral({live:true,status:'partial',baseSteps:steps,connectorSlots:slotsFor(spec,steps),walkConnections:[],steps,gaps,issues,sourceText:'Kakao 현재 응답 · 화면에서만 표시',observedAt});
 }
+
+const MAX_CONNECTORS=20;
+function slotsFor(spec,steps){
+ const slots=[];const add=(from,to,index,role)=>{if(meters(from,to)>.5)slots.push({id:'live-connector-'+slots.length,from:[...from],to:[...to],index,role});};
+ add(spec.from,steps[0].coords[0],0,'access');
+ for(let i=1;i<steps.length;i++){const left=steps.slice(0,i).some(s=>['BUS','SUBWAY'].includes(s.providerMode)),right=steps.slice(i).some(s=>['BUS','SUBWAY'].includes(s.providerMode));add(steps[i-1].coords.at(-1),steps[i].coords[0],i,left&&right?'transfer':left?'exit':right?'access':'transfer');}
+ add(steps.at(-1).coords.at(-1),spec.to,steps.length,'exit');return slots;
+}
+function parseWalkResponse(body,input,{observedAt,idPrefix='live-connector-0',role='transfer'}={}){
+ const spec=edge(input);need(['access','exit','transfer'].includes(role)&&typeof idPrefix==='string'&&/^live-connector-\d+$/.test(idPrefix));
+ need(typeof observedAt==='string'&&observedAt.length<=80&&Number.isFinite(Date.parse(observedAt)));
+ need(object(body)&&body.status==='OK'&&!Object.hasOwn(body,'routes')&&object(body.route));
+ const route=body.route,allowed=p=>{need(object(p)&&(!Object.hasOwn(p,'type')||p.type==='WALKING')&&!Object.hasOwn(p,'vehicles'));};
+ allowed(route.properties);metric(route.properties.totalDistance);metric(route.properties.totalTime);text(route.properties.landingUrl);
+ need(Array.isArray(route.legs)&&route.legs.length>=1&&route.legs.length<=20);
+ let vertices=0,count=0;const steps=[];
+ route.legs.forEach((leg,li)=>{
+  need(object(leg));allowed(leg.properties);metric(leg.properties.distance);metric(leg.properties.time);
+  need(Array.isArray(leg.steps)&&leg.steps.length>=1&&leg.steps.length<=MAX_STEPS);
+  leg.steps.forEach((step,si)=>{
+   need(++count<=MAX_STEPS&&object(step)&&object(step.path));const p=step.properties;allowed(p);
+   const guidance=text(p.guidance),distance=metric(p.distance),duration=metric(p.time);need(point([p.y,p.x]));
+   const points=step.path.points;need(Array.isArray(points)&&points.length>=2&&points.length<=MAX_STEP_VERTICES);vertices+=points.length;need(vertices<=MAX_VERTICES);
+   const coords=points.map(p=>{need(Array.isArray(p)&&p.length===2&&p.every(Number.isFinite));const c=[p[1],p[0]];need(point(c));return c;});
+   need(coords.some(c=>meters(coords[0],c)>.1));
+   need(coords.every((c,i)=>meters(spec.from,c)<=300000&&meters(spec.to,c)<=300000&&(!i||meters(coords[i-1],c)<=50000)));
+   const endpoint=c=>({coords:c,name:'도보 응답 끝점',kind:'place',evidence:{source:'Kakao 현재 도보 응답 끝점',reference:null,observedAt,verification:'unverified'}});
+   steps.push({id:idPrefix+'-leg-'+li+'-step-'+si,providerMode:'WALKING',mode:role==='transfer'?'transfer':'walk',walkRole:role,coords,guidance,distance,duration,from:endpoint(coords[0]),to:endpoint(coords.at(-1)),color:colors[role==='transfer'?'transfer':'walk'],geometryBacked:true,endpointOnly:coords.length===2,instruction:({access:'접근 도보',exit:'이탈 도보',transfer:'환승 이동'}[role])+' · '+guidance,measure:`${(distance/1000).toFixed(2)}km · 제공자 약 ${Math.round(duration/60)}분`,issues:[],evidenceText:'Kakao 현재 도보 응답 / '+observedAt+' / 현장 미검증',geometryEvidence:coords.length===2?'Kakao 도보 응답 좌표 2개 · 상세 경로·도로 정합 미확인':'Kakao 현재 도보 응답 선형 · 도로 정합 미검증',serviceEvidence:null});
+  });
+ });
+ const first=steps[0].coords[0],last=steps.at(-1).coords.at(-1);
+ need(meters(spec.from,spec.to)>.5);
+ need(meters(spec.from,first)+meters(spec.to,last)<=meters(spec.to,first)+meters(spec.from,last)+.5);
+ for(let i=0;i<steps.length;i++){const s=steps[i],a=i?steps[i-1].coords.at(-1):spec.from,b=i+1<steps.length?steps[i+1].coords[0]:spec.to;need(meters(a,s.coords[0])+meters(s.coords.at(-1),b)<=meters(a,s.coords.at(-1))+meters(s.coords[0],b)+.5);}
+ return ephemeral({steps,observedAt,sourceText:'Kakao 현재 도보 응답 · 화면에서만 표시'});
+}
+function mergeWalk(model,spec,slot,result){
+ need(model.live&&model.connectorSlots.includes(slot)&&!model.walkConnections.some(c=>c.slotId===slot.id));
+ const connections=[...model.walkConnections,{slotId:slot.id,steps:result.steps}],steps=[];
+ for(let i=0;i<=model.baseSteps.length;i++){
+  for(const s of model.connectorSlots.filter(s=>s.index===i)){const c=connections.find(c=>c.slotId===s.id);if(c)steps.push(...c.steps);}
+  if(i<model.baseSteps.length)steps.push(model.baseSteps[i]);
+ }
+ need(steps.length<=MAX_STEPS&&steps.reduce((n,s)=>n+s.coords.length,0)<=MAX_VERTICES);
+ const numbered=steps.map((s,i)=>({...s,number:i+1})),gaps=[],issues=model.issues.filter(x=>!/연결 경로 없음|접근 도보 근거 없음|이탈 도보 근거 없음|명시적 환승 이동 없음/.test(x));
+ const gap=(a,b,message)=>{if(meters(a,b)>.5){issues.push(message);gaps.push({coords:[[...a],[...b]],message});}};
+ gap(spec.from,numbered[0].coords[0],'출발: 도보 응답 후에도 원래 핀까지 연결 경로 없음 · 진입 미확인');
+ for(let i=1;i<numbered.length;i++){
+  const a=numbered[i-1],b=numbered[i];gap(a.coords.at(-1),b.coords[0],i+'→'+(i+1)+'단계: 도보 응답 후에도 연결 경로 없음 · 환승·접근 미확인');
+  if(a.providerMode!=='WALKING'&&b.providerMode!=='WALKING')issues.push(i+'→'+(i+1)+'단계: 명시적 환승 이동 없음');
+ }
+ gap(numbered.at(-1).coords.at(-1),spec.to,'도착: 도보 응답 후에도 원래 핀까지 연결 경로 없음 · 진입 미확인');
+ if(spec.fromKind==='place'&&numbered[0].providerMode!=='WALKING')issues.push('출발: 장소 핀에서 승하차점까지 접근 도보 근거 없음');
+ if(spec.toKind==='place'&&numbered.at(-1).providerMode!=='WALKING')issues.push('도착: 장소 핀에서 승하차점까지 이탈 도보 근거 없음');
+ for(const s of result.steps)if(s.endpointOnly)issues.push(s.id+': 도보 응답 좌표 2개 · 두 점만으로 실제 경로 확인 불가');
+ return ephemeral({...model,steps:numbered,gaps,issues:[...new Set(issues)],walkConnections:connections,status:'partial'});
+}
+
 function asLeg(original,model){
  const leg={...original,type:'composite',mode:'대중교통 · 현재 응답',coords:null,distance:null,duration:null,transportModel:model,liveTransit:true,source:model.sourceText,queriedAt:model.observedAt,desc:'현재 응답을 일시 표시합니다. 도로 정합·현장·운영 검증은 별도입니다. 원본 이동 메모: '+original.mode+' / '+original.desc};
  // Do not freeze, decorate or mutate source-owned nested trip objects.
@@ -144,7 +203,14 @@ function create({onChange=()=>{}}={}){
    Object.defineProperty(display,'toJSON',{value:()=>undefined});return Object.freeze(display);
   });
  }
- return Object.freeze({reconcile,begin,accept,fail,notice,view,dispose,toJSON:()=>undefined});
+ function current(input){return models.get(key(edge(input)))||null;}
+ function acceptWalk(input,expected,slotId,body,options){
+  const k=key(edge(input)),model=models.get(k),spec=edges.get(k);if(!spec||model!==expected)return false;
+  const slot=model.connectorSlots.find(s=>s.id===slotId);if(!slot)return false;
+  try{const result=parseWalkResponse(body,{...spec,from:slot.from,to:slot.to},{...options,idPrefix:slot.id,role:slot.role});models.set(k,mergeWalk(model,spec,slot,result));}catch(_){return false;}
+  onChange();return true;
+ }
+ return Object.freeze({reconcile,begin,accept,fail,notice,view,dispose,current,acceptWalk,toJSON:()=>undefined});
 }
-return Object.freeze({parseResponse,create,meters,validateRailRules,normalizeEdge:edge,edgeKey:key});
+return Object.freeze({parseResponse,create,meters,validateRailRules,normalizeEdge:edge,edgeKey:key,parseWalkResponse,MAX_CONNECTORS,failureText:reason=>failureMessages[failureReason(reason)]});
 });
